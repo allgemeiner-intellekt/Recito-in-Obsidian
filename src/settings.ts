@@ -1,4 +1,4 @@
-import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
+import { App, Modal, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type RecitoPlugin from './main';
 import type { ProviderConfig } from './lib/types';
 import { DEFAULT_SETTINGS } from './lib/constants';
@@ -54,33 +54,26 @@ export class RecitoSettingTab extends PluginSettingTab {
 
       // Add key button
       settingEl.addButton((btn) => {
-        btn.setButtonText('Add key').onClick(async () => {
-          const key = window.prompt(`Enter API key for ${meta.name}:`);
-          if (!key) return;
+        btn.setButtonText('Add key').onClick(() => {
+          new AddKeyModal(this.app, meta.id, meta.name, async (apiKey, baseUrl) => {
+            const config: ProviderConfig = {
+              id: `${meta.id}-${Date.now()}`,
+              providerId: meta.id,
+              name: meta.name,
+              apiKey,
+              baseUrl,
+            };
 
-          let baseUrl: string | undefined;
-          if (meta.id === 'custom') {
-            const url = window.prompt('Enter base URL (e.g. https://your-server/v1):');
-            baseUrl = url ?? undefined;
-          }
+            this.plugin.settings.providers.push(config);
 
-          const config: ProviderConfig = {
-            id: `${meta.id}-${Date.now()}`,
-            providerId: meta.id,
-            name: meta.name,
-            apiKey: key,
-            baseUrl,
-          };
+            // Auto-activate if this is the first provider
+            if (!this.plugin.settings.activeProviderGroup) {
+              this.plugin.settings.activeProviderGroup = config.id;
+            }
 
-          this.plugin.settings.providers.push(config);
-
-          // Auto-activate if this is the first provider
-          if (!this.plugin.settings.activeProviderGroup) {
-            this.plugin.settings.activeProviderGroup = config.id;
-          }
-
-          await this.plugin.saveSettings();
-          this.display();
+            await this.plugin.saveSettings();
+            this.display();
+          }).open();
         });
       });
 
@@ -250,5 +243,67 @@ export class RecitoSettingTab extends PluginSettingTab {
           this.display();
         });
       });
+  }
+}
+
+class AddKeyModal extends Modal {
+  private providerId: string;
+  private providerName: string;
+  private onSubmit: (apiKey: string, baseUrl?: string) => void;
+
+  constructor(
+    app: App,
+    providerId: string,
+    providerName: string,
+    onSubmit: (apiKey: string, baseUrl?: string) => void,
+  ) {
+    super(app);
+    this.providerId = providerId;
+    this.providerName = providerName;
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.createEl('h3', { text: `Add ${this.providerName} API Key` });
+
+    let apiKeyValue = '';
+    let baseUrlValue = '';
+
+    new Setting(contentEl)
+      .setName('API key')
+      .addText((text) => {
+        text.setPlaceholder('Enter your API key');
+        text.onChange((value) => { apiKeyValue = value; });
+      });
+
+    if (this.providerId === 'custom') {
+      new Setting(contentEl)
+        .setName('Base URL')
+        .setDesc('OpenAI-compatible endpoint (e.g. https://your-server/v1)')
+        .addText((text) => {
+          text.setPlaceholder('https://...');
+          text.onChange((value) => { baseUrlValue = value; });
+        });
+    }
+
+    new Setting(contentEl)
+      .addButton((btn) => {
+        btn.setButtonText('Save').setCta().onClick(() => {
+          if (!apiKeyValue.trim()) {
+            new Notice('API key cannot be empty.');
+            return;
+          }
+          this.onSubmit(apiKeyValue.trim(), baseUrlValue.trim() || undefined);
+          this.close();
+        });
+      })
+      .addButton((btn) => {
+        btn.setButtonText('Cancel').onClick(() => this.close());
+      });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
   }
 }
