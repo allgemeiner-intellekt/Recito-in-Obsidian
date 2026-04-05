@@ -1,8 +1,155 @@
-/*
+/* Recito Sidebar */
+.recito-sidebar {
+  padding: 12px;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.recito-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  text-align: center;
+}
 
-If your plugin does not need CSS, delete this file.
+.recito-idle-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  opacity: 0.6;
+}
 
-*/
+.recito-idle-title {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.recito-idle-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+.recito-idle-play-btn,
+.recito-play-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.recito-idle-play-btn:hover,
+.recito-play-btn:hover {
+  background: var(--interactive-accent-hover);
+}
+
+/* Playing state */
+.recito-note-title {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recito-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.recito-progress-bar {
+  height: 4px;
+  background: var(--background-modifier-border);
+  border-radius: 2px;
+  margin-bottom: 16px;
+  cursor: pointer;
+}
+
+.recito-progress-fill {
+  height: 100%;
+  background: var(--interactive-accent);
+  border-radius: 2px;
+  transition: width 0.1s linear;
+}
+
+.recito-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+
+.recito-control-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.recito-control-btn:hover {
+  color: var(--text-normal);
+}
+
+/* Speed */
+.recito-speed {
+  margin-bottom: 12px;
+}
+
+.recito-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.recito-speed-btns {
+  display: flex;
+  gap: 4px;
+}
+
+.recito-speed-btn {
+  padding: 3px 8px;
+  background: var(--background-modifier-border);
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--text-normal);
+}
+
+.recito-speed-btn.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: 500;
+}
+
+/* Volume */
+.recito-volume {
+  margin-bottom: 16px;
+}
+
+.recito-volume-slider {
+  width: 100%;
+  margin-top: 4px;
+}
+
+/* Provider */
+.recito-provider {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
