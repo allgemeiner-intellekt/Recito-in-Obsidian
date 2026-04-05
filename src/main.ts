@@ -1,99 +1,180 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import { MarkdownView, Notice, Plugin, WorkspaceLeaf } from 'obsidian';
+import { RecitoSettings } from './lib/types';
+import { DEFAULT_SETTINGS, READING_PROGRESS_MAX_AGE_MS } from './lib/constants';
+import { Orchestrator } from './orchestrator';
+import { RecitoSidebarView, SIDEBAR_VIEW_TYPE } from './sidebar';
+import { RecitoSettingTab } from './settings';
 
-// Remember to rename these classes and interfaces!
+export default class RecitoPlugin extends Plugin {
+  settings: RecitoSettings;
+  orchestrator: Orchestrator;
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+  async onload(): Promise<void> {
+    await this.loadSettings();
 
-	async onload() {
-		await this.loadSettings();
+    this.orchestrator = new Orchestrator(this);
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
+    // Register sidebar view
+    this.registerView(
+      SIDEBAR_VIEW_TYPE,
+      (leaf: WorkspaceLeaf) => new RecitoSidebarView(leaf, this),
+    );
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
+    // Ribbon icon
+    this.addRibbonIcon('headphones', 'Recito: Read aloud', () => {
+      void this.startPlayback();
+    });
 
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
+    // Commands
+    this.addCommand({
+      id: 'start-reading',
+      name: 'Start reading',
+      callback: () => {
+        void this.startPlayback();
+      },
+    });
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
-			}
-		});
+    this.addCommand({
+      id: 'pause-resume',
+      name: 'Pause / Resume',
+      callback: () => {
+        void this.togglePlayback();
+      },
+    });
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+    this.addCommand({
+      id: 'stop-reading',
+      name: 'Stop reading',
+      callback: () => {
+        this.orchestrator.stopPlayback();
+      },
+    });
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
-		});
+    this.addCommand({
+      id: 'skip-forward',
+      name: 'Skip forward',
+      callback: () => {
+        void this.orchestrator.skipForward();
+      },
+    });
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+    this.addCommand({
+      id: 'skip-backward',
+      name: 'Skip backward',
+      callback: () => {
+        void this.orchestrator.skipBackward();
+      },
+    });
 
-	}
+    this.addCommand({
+      id: 'toggle-sidebar',
+      name: 'Toggle Recito sidebar',
+      callback: () => {
+        void this.toggleSidebar();
+      },
+    });
 
-	onunload() {
-	}
+    // Settings tab
+    this.addSettingTab(new RecitoSettingTab(this.app, this));
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
-	}
+    // Pause on leaf change
+    this.registerEvent(
+      this.app.workspace.on('active-leaf-change', () => {
+        const state = this.orchestrator.getState();
+        if (state.status === 'playing') {
+          this.orchestrator.pausePlayback();
+        }
+      }),
+    );
 
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
-}
+    // Clean old reading progress on load
+    this.cleanOldProgress();
+  }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
+  onunload(): void {
+    this.orchestrator.dispose();
+    this.app.workspace.detachLeavesOfType(SIDEBAR_VIEW_TYPE);
+  }
 
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
+  async startPlayback(): Promise<void> {
+    const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!markdownView) {
+      new Notice('Recito: Open a Markdown note to start reading.');
+      return;
+    }
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
+    // Switch to reading (preview) mode
+    const currentState = markdownView.getState() as { mode?: string };
+    if (currentState.mode !== 'preview') {
+      await markdownView.setState({ mode: 'preview' }, { history: false });
+    }
+
+    await this.activateSidebar();
+
+    const containerEl = markdownView.containerEl;
+    const notePath = markdownView.file?.path ?? '';
+
+    await this.orchestrator.startPlayback(containerEl, notePath);
+  }
+
+  togglePlayback(): void {
+    const state = this.orchestrator.getState();
+    if (state.status === 'playing') {
+      this.orchestrator.pausePlayback();
+    } else if (state.status === 'paused') {
+      this.orchestrator.resumePlayback();
+    } else {
+      void this.startPlayback();
+    }
+  }
+
+  async activateSidebar(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]!);
+      return;
+    }
+
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: SIDEBAR_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+
+  async toggleSidebar(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+    if (existing.length > 0) {
+      existing.forEach((leaf) => leaf.detach());
+    } else {
+      await this.activateSidebar();
+    }
+  }
+
+  async loadSettings(): Promise<void> {
+    this.settings = Object.assign(
+      {},
+      DEFAULT_SETTINGS,
+      (await this.loadData()) as Partial<RecitoSettings>,
+    );
+  }
+
+  async saveSettings(): Promise<void> {
+    await this.saveData(this.settings);
+  }
+
+  cleanOldProgress(): void {
+    const now = Date.now();
+    let changed = false;
+    for (const key of Object.keys(this.settings.readingProgress)) {
+      const entry = this.settings.readingProgress[key];
+      if (entry && now - entry.timestamp > READING_PROGRESS_MAX_AGE_MS) {
+        delete this.settings.readingProgress[key];
+        changed = true;
+      }
+    }
+    if (changed) {
+      void this.saveSettings();
+    }
+  }
 }
