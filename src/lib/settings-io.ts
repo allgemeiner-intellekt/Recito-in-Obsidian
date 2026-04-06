@@ -1,4 +1,5 @@
 import type { ProviderConfig, RecitoSettings } from './types';
+import { getGroupKey } from './group-key';
 
 /** Cross-tool export envelope shape. Shared with the Chrome extension. */
 export interface ExportEnvelope {
@@ -13,16 +14,19 @@ export interface ImportResult {
   warnings: string[];
 }
 
-/** Recognized top-level keys inside `envelope.settings`. Anything else
- *  (other than the aliased themeColor and the never-nested providers)
- *  is stashed in `_foreign` for round-tripping. */
+/** Top-level keys inside `envelope.settings` that this side handles
+ *  explicitly. Anything else lands in `_foreign` for round-tripping.
+ *  - `themeColor` is the Chrome-side alias for `accentColor`.
+ *  - `readingProgress` is intentionally never imported (kept local). */
 const RECOGNIZED_SETTINGS_KEYS = new Set([
   'activeProviderGroup',
   'activeVoiceId',
   'accentColor',
+  'themeColor',
   'playback',
   'highlight',
   'ui',
+  'readingProgress',
 ]);
 
 /** Build a portable export envelope from the current Obsidian settings.
@@ -126,13 +130,12 @@ export function applyImport(current: RecitoSettings, envelope: unknown): ImportR
     } as RecitoSettings['ui'];
   }
 
-  // Foreign passthrough: every top-level key not recognized, not aliased,
-  // and not the (defensively excluded) nested providers field.
+  // Foreign passthrough: every top-level key not recognized and not the
+  // (defensively excluded) nested providers field.
   const foreign: Record<string, unknown> = { ...(next._foreign ?? {}) };
   for (const [key, value] of Object.entries(importedSettings)) {
     if (RECOGNIZED_SETTINGS_KEYS.has(key)) continue;
-    if (key === 'accentColor' || key === 'themeColor') continue;
-    if (key === 'providers') continue;
+    if (key === 'providers') continue; // defensive: providers shouldn't be nested in settings
     foreign[key] = value;
   }
   if (Object.keys(foreign).length > 0) {
@@ -149,10 +152,10 @@ export function applyImport(current: RecitoSettings, envelope: unknown): ImportR
   // null, leave the voice id alone — it may be valid once a group is chosen.
   if (next.activeProviderGroup !== null) {
     const groupExists = next.providers.some(
-      (p) => groupKeyOf(p) === next.activeProviderGroup,
+      (p) => getGroupKey(p) === next.activeProviderGroup,
     );
     if (!groupExists) {
-      next.activeProviderGroup = next.providers[0] ? groupKeyOf(next.providers[0]) : null;
+      next.activeProviderGroup = next.providers[0] ? getGroupKey(next.providers[0]) : null;
       next.activeVoiceId = null;
     }
   }
@@ -160,13 +163,3 @@ export function applyImport(current: RecitoSettings, envelope: unknown): ImportR
   return { next, providerCount: next.providers.length, warnings };
 }
 
-/** Local copy of the group-key rule from `lib/group-key.ts`. Duplicated here
- *  to keep `settings-io.ts` free of any other module dependencies for unit
- *  testing — the rule is small and stable. */
-function groupKeyOf(config: ProviderConfig): string {
-  if (config.providerId === 'custom') {
-    const normalized = (config.baseUrl || '').trim().replace(/\/+$/, '');
-    return `custom:${normalized}`;
-  }
-  return config.providerId;
-}
