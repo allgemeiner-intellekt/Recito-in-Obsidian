@@ -3,6 +3,9 @@ import type { TextNodeEntry, TextMapResult } from '../lib/types';
 const SKIP_SELECTORS = [
   'pre',
   'code',
+  '.mod-header',
+  '.inline-title',
+  '.mod-frontmatter',
   '.frontmatter-container',
   '.metadata-container',
   '.metadata-properties',
