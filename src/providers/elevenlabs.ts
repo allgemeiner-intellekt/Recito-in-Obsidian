@@ -1,6 +1,7 @@
 import type { TTSProvider, ProviderConfig, Voice, SynthesisResult, SynthesisOptions, ProviderUsage, WordTiming } from '../lib/types';
 import { hasLikelyValidApiKeyFormat } from './api-key-format';
 import { ApiError } from '../lib/api-error';
+import { httpFetch, type HttpResponse } from '../lib/http';
 
 const DEFAULT_BASE_URL = 'https://api.elevenlabs.io';
 const DEFAULT_MODEL_ID = 'eleven_multilingual_v2';
@@ -53,7 +54,7 @@ export const elevenlabsProvider: TTSProvider = {
   async listVoices(config: ProviderConfig): Promise<Voice[]> {
     const baseUrl = getNormalizedBaseUrl(config);
     const apiKey = getNormalizedApiKey(config);
-    const response = await fetch(`${baseUrl}/v1/voices`, {
+    const response = await httpFetch(`${baseUrl}/v1/voices`, {
       headers: { 'xi-api-key': apiKey },
     });
 
@@ -68,7 +69,7 @@ export const elevenlabsProvider: TTSProvider = {
       );
     }
 
-    const data = await response.json();
+    const data = await response.json<{ voices?: { voice_id: string; name: string; labels?: Record<string, string> }[] }>();
     return (data.voices ?? []).map((v: { voice_id: string; name: string; labels?: Record<string, string> }) => ({
       id: v.voice_id,
       name: v.name,
@@ -112,10 +113,9 @@ export const elevenlabsProvider: TTSProvider = {
       // Fall back to /stream endpoint without timestamps
     }
 
-    let response: Response;
+    let response: HttpResponse;
     try {
-      response = await fetch(`${baseUrl}/v1/text-to-speech/${voice.id}/stream`, {
-        signal: AbortSignal.timeout(30_000),
+      response = await httpFetch(`${baseUrl}/v1/text-to-speech/${voice.id}/stream`, {
         method: 'POST',
         headers: {
           'xi-api-key': apiKey,
@@ -137,7 +137,7 @@ export const elevenlabsProvider: TTSProvider = {
       if (response.status === 429) {
         throw new ApiError('Rate limit exceeded. Please try again later.', 429, 'elevenlabs', true);
       }
-      throw ApiError.fromResponse(response.status, detail || response.statusText, 'elevenlabs', response.headers);
+      throw ApiError.fromResponse(response.status, detail || `HTTP ${response.status}`, 'elevenlabs', response.headers);
     }
 
     const audioData = await response.arrayBuffer();
@@ -151,7 +151,7 @@ export const elevenlabsProvider: TTSProvider = {
     const baseUrl = getNormalizedBaseUrl(config);
     const apiKey = getNormalizedApiKey(config);
     try {
-      const response = await fetch(`${baseUrl}/v1/voices`, {
+      const response = await httpFetch(`${baseUrl}/v1/voices`, {
         headers: { 'xi-api-key': apiKey },
       });
       return response.status === 200;
@@ -178,8 +178,7 @@ async function synthesizeWithTimestamps(
   body: Record<string, unknown>,
   originalText: string,
 ): Promise<SynthesisResult> {
-  const response = await fetch(`${baseUrl}/v1/text-to-speech/${voiceId}/with-timestamps`, {
-    signal: AbortSignal.timeout(30_000),
+  const response = await httpFetch(`${baseUrl}/v1/text-to-speech/${voiceId}/with-timestamps`, {
     method: 'POST',
     headers: {
       'xi-api-key': apiKey,
@@ -192,10 +191,10 @@ async function synthesizeWithTimestamps(
     throw new Error(`with-timestamps endpoint failed: ${response.status}`);
   }
 
-  const data = (await response.json()) as {
+  const data = await response.json<{
     audio_base64: string;
     alignment: ElevenLabsAlignment;
-  };
+  }>();
 
   // Decode base64 audio to ArrayBuffer
   const binary = atob(data.audio_base64);
@@ -255,7 +254,7 @@ function alignmentToWordTimings(text: string, alignment: ElevenLabsAlignment): W
 export async function getElevenLabsUsage(config: ProviderConfig): Promise<ProviderUsage> {
   const baseUrl = getNormalizedBaseUrl(config);
   const apiKey = getNormalizedApiKey(config);
-  const response = await fetch(`${baseUrl}/v1/user/subscription`, {
+  const response = await httpFetch(`${baseUrl}/v1/user/subscription`, {
     headers: { 'xi-api-key': apiKey },
   });
 
@@ -267,11 +266,11 @@ export async function getElevenLabsUsage(config: ProviderConfig): Promise<Provid
     );
   }
 
-  const data = (await response.json()) as {
+  const data = await response.json<{
     character_count: number;
     character_limit: number;
     next_character_count_reset_unix: number;
-  };
+  }>();
 
   return {
     characterCount: data.character_count,

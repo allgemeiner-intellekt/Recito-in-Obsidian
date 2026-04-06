@@ -1,6 +1,7 @@
 import type { TTSProvider, ProviderConfig, Voice, SynthesisResult, SynthesisOptions } from '../lib/types';
 import { buildOpenAICompatibleUrl, validateOpenAICompatibleSpeech } from './openai-compatible';
 import { ApiError } from '../lib/api-error';
+import { httpFetch, type HttpResponse } from '../lib/http';
 
 export const customProvider: TTSProvider = {
   id: 'custom',
@@ -9,11 +10,11 @@ export const customProvider: TTSProvider = {
   async listVoices(config: ProviderConfig): Promise<Voice[]> {
     if (!config.baseUrl) return [];
     try {
-      const response = await fetch(buildOpenAICompatibleUrl(config.baseUrl, '/audio/voices'), {
+      const response = await httpFetch(buildOpenAICompatibleUrl(config.baseUrl, '/audio/voices'), {
         headers: { 'Authorization': `Bearer ${config.apiKey}` },
       });
       if (!response.ok) return [];
-      const data = await response.json();
+      const data = await response.json<{ voices?: { id: string; name?: string }[] }>();
       return (data.voices ?? []).map((v: { id: string; name?: string }) => ({
         id: v.id,
         name: v.name ?? v.id,
@@ -36,10 +37,9 @@ export const customProvider: TTSProvider = {
     const speed = options?.speed ?? 1.0;
     const format = options?.format ?? 'mp3';
 
-    let response: Response;
+    let response: HttpResponse;
     try {
-      response = await fetch(buildOpenAICompatibleUrl(config.baseUrl, '/audio/speech'), {
-        signal: AbortSignal.timeout(30_000),
+      response = await httpFetch(buildOpenAICompatibleUrl(config.baseUrl, '/audio/speech'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${config.apiKey}`,

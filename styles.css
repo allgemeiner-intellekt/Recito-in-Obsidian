@@ -153,3 +153,184 @@
   padding-top: 12px;
   border-top: 1px solid var(--background-modifier-border);
 }
+
+/* =========================================================================
+   Settings Tab
+   ========================================================================= */
+
+.recito-settings .recito-section-heading {
+  margin-top: 24px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.recito-settings .recito-section-heading:first-child {
+  margin-top: 8px;
+}
+
+.recito-card {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.recito-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.recito-card-header-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.recito-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.recito-card-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.recito-card-action {
+  flex: 0 0 auto;
+}
+
+.recito-card-body {
+  padding: 8px 14px 12px;
+}
+
+/* Settings cards (no header, hold Setting rows) */
+.recito-card--settings {
+  padding: 4px 14px;
+}
+
+.recito-card--settings .setting-item {
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.recito-card--settings .setting-item:first-child {
+  border-top: none;
+}
+
+.recito-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 8px 0;
+}
+
+/* Key rows */
+.recito-key-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.recito-key-row:first-child {
+  border-top: none;
+}
+
+.recito-key-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-muted);
+  background: transparent;
+}
+
+.recito-key-dot.is-active {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+}
+
+.recito-key-info {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.recito-key-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-normal);
+}
+
+.recito-key-mask {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  color: var(--text-normal);
+}
+
+.recito-key-name {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.recito-key-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.recito-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.recito-key-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+}
+
+.recito-key-actions button {
+  font-size: 11px;
+  padding: 4px 8px;
+}
+
+/* Voice picker */
+.recito-voice-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.recito-voice-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.recito-voice-status {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Provider modal */
+.recito-provider-modal h3 {
+  margin-top: 0;
+}

@@ -1,3 +1,5 @@
+import { httpFetch } from '../lib/http';
+
 export function buildOpenAICompatibleUrl(baseUrl: string, path: string): string {
   const trimmedBaseUrl = baseUrl.trim().replace(/\/+$/, '');
   const baseWithVersion = /\/v1$/i.test(trimmedBaseUrl) ? trimmedBaseUrl : `${trimmedBaseUrl}/v1`;
@@ -8,7 +10,7 @@ export function buildOpenAICompatibleUrl(baseUrl: string, path: string): string 
 
 export async function validateOpenAICompatibleKey(
   baseUrl: string,
-  headers: HeadersInit,
+  headers: Record<string, string>,
 ): Promise<boolean> {
   return validateOpenAICompatibleSpeech(baseUrl, headers, {
     model: 'tts-1',
@@ -20,11 +22,11 @@ export async function validateOpenAICompatibleKey(
 
 export async function validateOpenAICompatibleSpeech(
   baseUrl: string,
-  headers: HeadersInit,
+  headers: Record<string, string>,
   body: Record<string, unknown>,
 ): Promise<boolean> {
   try {
-    const response = await fetch(buildOpenAICompatibleUrl(baseUrl, '/audio/speech'), {
+    const response = await httpFetch(buildOpenAICompatibleUrl(baseUrl, '/audio/speech'), {
       method: 'POST',
       headers: {
         ...headers,

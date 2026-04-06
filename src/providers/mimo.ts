@@ -1,6 +1,7 @@
 import type { TTSProvider, ProviderConfig, Voice, SynthesisResult, SynthesisOptions } from '../lib/types';
 import { hasLikelyValidApiKeyFormat } from './api-key-format';
 import { ApiError } from '../lib/api-error';
+import { httpFetch, type HttpResponse } from '../lib/http';
 
 const DEFAULT_BASE_URL = 'https://api.xiaomimimo.com/v1';
 const DEFAULT_MODEL = 'mimo-v2-tts';
@@ -57,10 +58,9 @@ export const mimoProvider: TTSProvider = {
     const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
     const body = buildRequestBody(text, voice.id);
 
-    let response: Response;
+    let response: HttpResponse;
     try {
-      response = await fetch(`${baseUrl}/chat/completions`, {
-        signal: AbortSignal.timeout(30_000),
+      response = await httpFetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: buildHeaders(config.apiKey),
         body: JSON.stringify(body),
@@ -82,7 +82,7 @@ export const mimoProvider: TTSProvider = {
 
     let json: Record<string, unknown>;
     try {
-      json = await response.json();
+      json = await response.json<Record<string, unknown>>();
     } catch {
       throw new ApiError('Failed to parse Mimo response as JSON.', 0, 'mimo', true);
     }
@@ -115,8 +115,7 @@ export const mimoProvider: TTSProvider = {
     const body = buildRequestBody('test', MIMO_VOICES[0]!.id);
 
     try {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
-        signal: AbortSignal.timeout(15_000),
+      const response = await httpFetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: buildHeaders(config.apiKey),
         body: JSON.stringify(body),
