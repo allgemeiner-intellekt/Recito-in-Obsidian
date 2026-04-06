@@ -45,15 +45,6 @@ function gradientForTitle(title: string): { gradient: string; hue: number } {
   return { gradient, hue: hue1 };
 }
 
-/** First grapheme of the title, uppercased — falls back to a music note. */
-function initialFor(title: string): string {
-  const trimmed = title.trim();
-  if (!trimmed) return '\u266A';
-  // Use Array.from to handle surrogate pairs / emoji properly.
-  const first = Array.from(trimmed)[0] ?? '\u266A';
-  return first.toUpperCase();
-}
-
 const ICON_PLAY = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.55.83l10.04-6.86a1 1 0 0 0 0-1.66L9.55 4.31A1 1 0 0 0 8 5.14z"/></svg>`;
 const ICON_PAUSE = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>`;
 const ICON_SKIP_BACK = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h2v12H6zM20 6.41 18.59 5 11 12.59V6h-2v12h2v-6.59L18.59 19 20 17.59 13.41 12z"/></svg>`;
@@ -72,7 +63,7 @@ export class RecitoSidebarView extends ItemView {
 
   // Playing-state child elements (updated on each render)
   private artworkEl: HTMLElement | null = null;
-  private artworkLetterEl: HTMLElement | null = null;
+  private vinylLabelEl: HTMLElement | null = null;
   private noteTitleEl: HTMLElement | null = null;
   private providerEl: HTMLElement | null = null;
   private timeElapsedEl: HTMLElement | null = null;
@@ -166,14 +157,16 @@ export class RecitoSidebarView extends ItemView {
     this.playingEl = root.createDiv({ cls: 'recito-playing' });
     this.playingEl.style.display = 'none';
 
-    // Hero artwork — gradient tile with a big initial + animated EQ overlay
+    // Hero artwork — vinyl record. The disc spins while playing; the center
+    // label is a deterministic gradient derived from the note title, so each
+    // note still gets a unique visual identity (analogous to a real record's
+    // label art).
     this.artworkEl = this.playingEl.createDiv({ cls: 'recito-artwork' });
-    this.artworkLetterEl = this.artworkEl.createDiv({
-      cls: 'recito-artwork-letter',
-    });
-    const eq = this.artworkEl.createDiv({ cls: 'recito-artwork-eq' });
-    for (let i = 0; i < 4; i++) eq.createDiv({ cls: 'recito-artwork-eq-bar' });
-    this.artworkEl.createDiv({ cls: 'recito-artwork-vignette' });
+    const vinyl = this.artworkEl.createDiv({ cls: 'recito-vinyl' });
+    vinyl.createDiv({ cls: 'recito-vinyl-grooves' });
+    this.vinylLabelEl = vinyl.createDiv({ cls: 'recito-vinyl-label' });
+    this.vinylLabelEl.createDiv({ cls: 'recito-vinyl-hole' });
+    this.artworkEl.createDiv({ cls: 'recito-artwork-shine' });
 
     // Now-playing block
     const meta = this.playingEl.createDiv({ cls: 'recito-meta' });
@@ -362,13 +355,12 @@ export class RecitoSidebarView extends ItemView {
   }
 
   private updateArtwork(title: string): void {
-    if (!this.artworkEl || !this.artworkLetterEl) return;
+    if (!this.artworkEl || !this.vinylLabelEl) return;
     if (this.artworkTitle === title) return;
     this.artworkTitle = title;
 
     const { gradient } = gradientForTitle(title);
-    this.artworkEl.style.setProperty('--recito-art-bg', gradient);
-    this.artworkLetterEl.textContent = initialFor(title);
+    this.vinylLabelEl.style.background = gradient;
   }
 
   private syncVolumeFill(value: number): void {

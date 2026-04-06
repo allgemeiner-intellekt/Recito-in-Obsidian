@@ -132,100 +132,130 @@
   gap: 16px;
 }
 
-/* Artwork tile */
+/* Artwork tile — vinyl record */
 .recito-artwork {
   position: relative;
   width: 100%;
   aspect-ratio: 1 / 1;
-  max-height: 200px;
+  max-height: 220px;
   border-radius: var(--recito-radius-lg);
-  background: var(--recito-art-bg);
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow:
-    0 14px 30px -16px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(255, 255, 255, 0.06) inset;
-  isolation: isolate;
-  transition: transform 0.4s ease;
-}
-
-.recito-artwork[data-status="playing"] {
-  animation: recito-art-breathe 4.5s ease-in-out infinite;
-}
-
-@keyframes recito-art-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.012); }
-}
-
-.recito-artwork-vignette {
-  position: absolute;
-  inset: 0;
   background:
-    radial-gradient(ellipse at top, rgba(255, 255, 255, 0.18), transparent 60%),
-    radial-gradient(ellipse at bottom, rgba(0, 0, 0, 0.35), transparent 65%);
-  pointer-events: none;
-  z-index: 1;
+    radial-gradient(circle at 30% 25%, #1f1f26 0%, #0a0a0e 70%);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  box-shadow:
+    0 14px 30px -16px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  isolation: isolate;
 }
 
-.recito-artwork-letter {
+/* The disc itself — fills almost the whole tile and rotates while playing */
+.recito-vinyl {
   position: relative;
-  z-index: 2;
-  font-size: 88px;
-  font-weight: 800;
-  line-height: 1;
-  color: rgba(255, 255, 255, 0.96);
-  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
-  letter-spacing: -0.04em;
-  font-family: var(--font-interface), system-ui, sans-serif;
-  user-select: none;
+  width: 92%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background:
+    /* faint glossy highlight that travels with the disc */
+    radial-gradient(
+      ellipse 70% 50% at 32% 28%,
+      rgba(255, 255, 255, 0.08),
+      transparent 55%
+    ),
+    /* base disc — slight radial fade so it doesn't look flat black */
+    radial-gradient(circle at 35% 30%, #2a2a32 0%, #07070a 75%);
+  display: grid;
+  place-items: center;
+  box-shadow:
+    inset 0 0 30px rgba(0, 0, 0, 0.7),
+    0 4px 14px rgba(0, 0, 0, 0.4);
 }
 
-/* Equalizer overlay (bottom-right of artwork) */
-.recito-artwork-eq {
+/* Concentric grooves rendered as a repeating radial pattern */
+.recito-vinyl-grooves {
   position: absolute;
-  right: 14px;
-  bottom: 14px;
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 18px;
-  z-index: 3;
-  opacity: 0;
-  transition: opacity 0.25s ease;
+  inset: 4%;
+  border-radius: 50%;
+  background:
+    repeating-radial-gradient(
+      circle at center,
+      rgba(255, 255, 255, 0.055) 0 1px,
+      rgba(255, 255, 255, 0) 1px 4px
+    );
+  pointer-events: none;
+  /* Mask out the center region so grooves don't overlap the label */
+  -webkit-mask: radial-gradient(circle at center, transparent 35%, #000 36%);
+  mask: radial-gradient(circle at center, transparent 35%, #000 36%);
 }
 
-.recito-artwork[data-status="playing"] .recito-artwork-eq {
-  opacity: 1;
+/* Spin only while actually playing — pause animation otherwise */
+.recito-artwork[data-status="playing"] .recito-vinyl {
+  animation: recito-vinyl-spin 6s linear infinite;
 }
 
-.recito-artwork-eq-bar {
-  width: 3px;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.92);
-  border-radius: 1.5px;
-  transform-origin: bottom;
-  animation: recito-eq 1s ease-in-out infinite;
-}
-
-.recito-artwork-eq-bar:nth-child(1) { animation-delay: -0.4s; }
-.recito-artwork-eq-bar:nth-child(2) { animation-delay: -0.2s; }
-.recito-artwork-eq-bar:nth-child(3) { animation-delay: -0.6s; }
-.recito-artwork-eq-bar:nth-child(4) { animation-delay: -0.1s; }
-
-.recito-artwork[data-status="paused"] .recito-artwork-eq-bar,
-.recito-artwork[data-status="loading"] .recito-artwork-eq-bar {
+.recito-artwork[data-status="paused"] .recito-vinyl,
+.recito-artwork[data-status="loading"] .recito-vinyl {
+  animation: recito-vinyl-spin 6s linear infinite;
   animation-play-state: paused;
 }
 
-@keyframes recito-eq {
-  0%, 100% { transform: scaleY(0.35); }
-  20% { transform: scaleY(0.9); }
-  40% { transform: scaleY(0.5); }
-  60% { transform: scaleY(1); }
-  80% { transform: scaleY(0.6); }
+@keyframes recito-vinyl-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Loading: gentle wobble back and forth instead of full spin */
+.recito-artwork[data-status="loading"] .recito-vinyl {
+  animation: recito-vinyl-cue 1.6s ease-in-out infinite;
+  animation-play-state: running;
+}
+
+@keyframes recito-vinyl-cue {
+  0%, 100% { transform: rotate(-6deg); }
+  50% { transform: rotate(6deg); }
+}
+
+/* Center label — the deterministic gradient lives here.
+   Each note gets its own "release" color. */
+.recito-vinyl-label {
+  position: relative;
+  width: 36%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  /* background set inline from JS via `gradientForTitle()` */
+  display: grid;
+  place-items: center;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 2px 6px rgba(0, 0, 0, 0.45);
+}
+
+.recito-vinyl-hole {
+  width: 14%;
+  aspect-ratio: 1 / 1;
+  min-width: 6px;
+  border-radius: 50%;
+  background: #0a0a0e;
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+/* Fixed light reflection — does NOT rotate with the disc, so it reads as
+   real light bouncing off a moving record */
+.recito-artwork-shine {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 65% 45% at 28% 22%,
+    rgba(255, 255, 255, 0.1),
+    transparent 55%
+  );
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 5;
+  mix-blend-mode: screen;
 }
 
 /* Now-playing meta */
