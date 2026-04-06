@@ -16,10 +16,51 @@ export const SIDEBAR_VIEW_TYPE = 'recito-sidebar';
 const AVG_CHUNK_DURATION = 15;
 
 function formatTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
+
+/** Stable string hash → non-negative integer. */
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h << 5) - h + s.charCodeAt(i);
+    h |= 0;
+  }
+  return Math.abs(h);
+}
+
+/**
+ * Deterministic two-color gradient derived from the note title. Same title
+ * always yields the same artwork — gives every note a recognizable identity.
+ */
+function gradientForTitle(title: string): { gradient: string; hue: number } {
+  const seed = title.trim() || 'recito';
+  const h = hashString(seed);
+  const hue1 = h % 360;
+  const hue2 = (hue1 + 35 + ((h >> 5) % 70)) % 360;
+  const gradient = `linear-gradient(135deg, hsl(${hue1} 72% 58%) 0%, hsl(${hue2} 78% 42%) 100%)`;
+  return { gradient, hue: hue1 };
+}
+
+/** First grapheme of the title, uppercased — falls back to a music note. */
+function initialFor(title: string): string {
+  const trimmed = title.trim();
+  if (!trimmed) return '\u266A';
+  // Use Array.from to handle surrogate pairs / emoji properly.
+  const first = Array.from(trimmed)[0] ?? '\u266A';
+  return first.toUpperCase();
+}
+
+const ICON_PLAY = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.55.83l10.04-6.86a1 1 0 0 0 0-1.66L9.55 4.31A1 1 0 0 0 8 5.14z"/></svg>`;
+const ICON_PAUSE = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>`;
+const ICON_SKIP_BACK = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h2v12H6zM20 6.41 18.59 5 11 12.59V6h-2v12h2v-6.59L18.59 19 20 17.59 13.41 12z"/></svg>`;
+const ICON_SKIP_FWD = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16 6h2v12h-2zM4 17.59 5.41 19 13 11.41V18h2V6h-2v6.59L5.41 5 4 6.41 10.59 12z"/></svg>`;
+const ICON_STOP = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>`;
+const ICON_VOLUME = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 10v4a1 1 0 0 0 1 1h3l4.29 4.29A1 1 0 0 0 13 18.59V5.41a1 1 0 0 0-1.71-.71L7 9H4a1 1 0 0 0-1 1zm13.5 2A4.5 4.5 0 0 0 14 7.97v8.05A4.5 4.5 0 0 0 16.5 12zM14 3.23v2.06A6.99 6.99 0 0 1 19 12a6.99 6.99 0 0 1-5 6.71v2.06A8.99 8.99 0 0 0 21 12a8.99 8.99 0 0 0-7-8.77z"/></svg>`;
+const ICON_HEADPHONES = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3a9 9 0 0 0-9 9v6a3 3 0 0 0 3 3h2v-8H5v-1a7 7 0 0 1 14 0v1h-3v8h2a3 3 0 0 0 3-3v-6a9 9 0 0 0-9-9z"/></svg>`;
 
 export class RecitoSidebarView extends ItemView {
   private plugin: RecitoPlugin;
@@ -30,14 +71,22 @@ export class RecitoSidebarView extends ItemView {
   private playingEl: HTMLElement | null = null;
 
   // Playing-state child elements (updated on each render)
+  private artworkEl: HTMLElement | null = null;
+  private artworkLetterEl: HTMLElement | null = null;
   private noteTitleEl: HTMLElement | null = null;
-  private timeEl: HTMLElement | null = null;
+  private providerEl: HTMLElement | null = null;
+  private timeElapsedEl: HTMLElement | null = null;
+  private timeTotalEl: HTMLElement | null = null;
+  private progressBarEl: HTMLElement | null = null;
   private progressBarFillEl: HTMLElement | null = null;
+  private progressBarThumbEl: HTMLElement | null = null;
   private playPauseBtn: HTMLButtonElement | null = null;
-  private playPauseIconState: 'playing' | 'paused' | null = null;
+  private playPauseIconState: 'playing' | 'paused' | 'loading' | null = null;
   private speedBtns: Map<number, HTMLButtonElement> = new Map();
   private volumeSlider: HTMLInputElement | null = null;
-  private providerEl: HTMLElement | null = null;
+
+  // Memo so we don't rebuild artwork DOM unless the title actually changes.
+  private artworkTitle: string | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: RecitoPlugin) {
     super(leaf);
@@ -61,115 +110,12 @@ export class RecitoSidebarView extends ItemView {
     root.empty();
     root.addClass('recito-sidebar');
 
-    // ── Idle state ──────────────────────────────────────────────────────────
-    this.idleEl = root.createDiv({ cls: 'recito-idle' });
+    this.buildIdle(root);
+    this.buildPlaying(root);
 
-    const playBtn = this.idleEl.createEl('button', { cls: 'recito-play-btn' });
-    playBtn.setAttribute('aria-label', 'Start playback');
-    playBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
-      <path d="M8 5v14l11-7z"/>
-    </svg>`;
-    playBtn.addEventListener('click', () => {
-      void this.plugin.startPlayback();
-    });
-
-    this.idleEl.createEl('p', {
-      text: 'Open a note and press play to start listening.',
-      cls: 'recito-idle-msg',
-    });
-
-    // ── Playing state ────────────────────────────────────────────────────────
-    this.playingEl = root.createDiv({ cls: 'recito-playing' });
-    this.playingEl.style.display = 'none';
-
-    // Note title
-    this.noteTitleEl = this.playingEl.createEl('div', { cls: 'recito-note-title' });
-
-    // Time display
-    this.timeEl = this.playingEl.createEl('div', { cls: 'recito-time' });
-
-    // Progress bar
-    const progressBar = this.playingEl.createDiv({ cls: 'recito-progress-bar' });
-    this.progressBarFillEl = progressBar.createDiv({ cls: 'recito-progress-fill' });
-
-    // Transport controls
-    const transport = this.playingEl.createDiv({ cls: 'recito-transport' });
-
-    const skipBackBtn = transport.createEl('button', { cls: 'recito-btn recito-skip-back' });
-    skipBackBtn.setAttribute('aria-label', 'Skip backward');
-    skipBackBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-      <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/>
-    </svg>`;
-    skipBackBtn.addEventListener('click', () => {
-      void this.plugin.orchestrator.skipBackward();
-    });
-
-    this.playPauseBtn = transport.createEl('button', { cls: 'recito-btn recito-play-pause' });
-    this.playPauseBtn.setAttribute('aria-label', 'Play/Pause');
-    this.playPauseIconState = null;
-    this.playPauseBtn.addEventListener('click', () => {
-      void this.plugin.togglePlayback();
-    });
-
-    const skipFwdBtn = transport.createEl('button', { cls: 'recito-btn recito-skip-fwd' });
-    skipFwdBtn.setAttribute('aria-label', 'Skip forward');
-    skipFwdBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-      <path d="M6 18l8.5-6L6 6v12zm2-12v12l8.5-6z" style="display:none"/>
-      <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
-    </svg>`;
-    skipFwdBtn.addEventListener('click', () => {
-      void this.plugin.orchestrator.skipForward();
-    });
-
-    const stopBtn = transport.createEl('button', { cls: 'recito-btn recito-stop' });
-    stopBtn.setAttribute('aria-label', 'Stop and reset to start');
-    stopBtn.setAttribute('title', 'Stop (clears resume position)');
-    stopBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-      <path d="M6 6h12v12H6z"/>
-    </svg>`;
-    stopBtn.addEventListener('click', () => {
-      this.plugin.orchestrator.stopPlayback({ clearProgress: true });
-    });
-
-    // Speed presets
-    const speedRow = this.playingEl.createDiv({ cls: 'recito-speed-row' });
-    speedRow.createEl('span', { text: 'Speed:', cls: 'recito-label' });
-    const speedBtns = speedRow.createDiv({ cls: 'recito-speed-btns' });
-    this.speedBtns.clear();
-    for (const preset of SPEED_PRESETS) {
-      const btn = speedBtns.createEl('button', {
-        text: `${preset}x`,
-        cls: 'recito-speed-btn',
-      });
-      btn.dataset.speed = String(preset);
-      btn.addEventListener('click', () => {
-        this.plugin.orchestrator.setSpeed(preset);
-      });
-      this.speedBtns.set(preset, btn);
-    }
-
-    // Volume slider
-    const volumeRow = this.playingEl.createDiv({ cls: 'recito-volume-row' });
-    volumeRow.createEl('span', { text: 'Volume:', cls: 'recito-label' });
-    this.volumeSlider = volumeRow.createEl('input', { cls: 'recito-volume-slider' });
-    this.volumeSlider.type = 'range';
-    this.volumeSlider.min = '0';
-    this.volumeSlider.max = '1';
-    this.volumeSlider.step = '0.05';
-    this.volumeSlider.value = String(this.plugin.settings.playback.defaultVolume);
-    this.volumeSlider.addEventListener('input', () => {
-      const val = parseFloat(this.volumeSlider!.value);
-      this.plugin.orchestrator.setVolume(val);
-    });
-
-    // Provider display
-    this.providerEl = this.playingEl.createEl('div', { cls: 'recito-provider' });
-
-    // ── Subscribe to state ───────────────────────────────────────────────────
     this.stateListener = (state: PlaybackState) => this.renderState(state);
     this.plugin.orchestrator.addListener(this.stateListener);
 
-    // Render immediately with current state
     this.renderState(this.plugin.orchestrator.getState());
   }
 
@@ -180,75 +126,269 @@ export class RecitoSidebarView extends ItemView {
     }
   }
 
+  // ────────────────────────────────────────────────────────────────────────
+  // Idle state
+  // ────────────────────────────────────────────────────────────────────────
+
+  private buildIdle(root: HTMLElement): void {
+    this.idleEl = root.createDiv({ cls: 'recito-idle' });
+
+    const hero = this.idleEl.createDiv({ cls: 'recito-idle-hero' });
+    const orb = hero.createDiv({ cls: 'recito-idle-orb' });
+    orb.innerHTML = ICON_HEADPHONES;
+    hero.createDiv({ cls: 'recito-idle-orb-ring' });
+    hero.createDiv({ cls: 'recito-idle-orb-ring recito-idle-orb-ring--2' });
+
+    this.idleEl.createEl('h2', { cls: 'recito-idle-title', text: 'Recito' });
+    this.idleEl.createEl('p', {
+      cls: 'recito-idle-tagline',
+      text: 'Your notes, read aloud.',
+    });
+
+    const startBtn = this.idleEl.createEl('button', { cls: 'recito-idle-start' });
+    startBtn.setAttribute('aria-label', 'Start listening');
+    startBtn.innerHTML = `${ICON_PLAY}<span>Start listening</span>`;
+    startBtn.addEventListener('click', () => {
+      void this.plugin.startPlayback();
+    });
+
+    this.idleEl.createEl('p', {
+      cls: 'recito-idle-hint',
+      text: 'Open a note, then press play.',
+    });
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // Playing state
+  // ────────────────────────────────────────────────────────────────────────
+
+  private buildPlaying(root: HTMLElement): void {
+    this.playingEl = root.createDiv({ cls: 'recito-playing' });
+    this.playingEl.style.display = 'none';
+
+    // Hero artwork — gradient tile with a big initial + animated EQ overlay
+    this.artworkEl = this.playingEl.createDiv({ cls: 'recito-artwork' });
+    this.artworkLetterEl = this.artworkEl.createDiv({
+      cls: 'recito-artwork-letter',
+    });
+    const eq = this.artworkEl.createDiv({ cls: 'recito-artwork-eq' });
+    for (let i = 0; i < 4; i++) eq.createDiv({ cls: 'recito-artwork-eq-bar' });
+    this.artworkEl.createDiv({ cls: 'recito-artwork-vignette' });
+
+    // Now-playing block
+    const meta = this.playingEl.createDiv({ cls: 'recito-meta' });
+    this.noteTitleEl = meta.createDiv({ cls: 'recito-note-title' });
+    this.providerEl = meta.createDiv({ cls: 'recito-provider-chip' });
+
+    // Progress bar with seek
+    const progress = this.playingEl.createDiv({ cls: 'recito-progress' });
+    this.progressBarEl = progress.createDiv({ cls: 'recito-progress-bar' });
+    this.progressBarEl.setAttribute('role', 'slider');
+    this.progressBarEl.setAttribute('aria-label', 'Playback position');
+    this.progressBarFillEl = this.progressBarEl.createDiv({
+      cls: 'recito-progress-fill',
+    });
+    this.progressBarThumbEl = this.progressBarEl.createDiv({
+      cls: 'recito-progress-thumb',
+    });
+    this.progressBarEl.addEventListener('click', (ev) => {
+      this.handleProgressSeek(ev);
+    });
+
+    const times = progress.createDiv({ cls: 'recito-times' });
+    this.timeElapsedEl = times.createSpan({ cls: 'recito-time-elapsed' });
+    this.timeTotalEl = times.createSpan({ cls: 'recito-time-total' });
+
+    // Transport row
+    const transport = this.playingEl.createDiv({ cls: 'recito-transport' });
+
+    const skipBackBtn = transport.createEl('button', {
+      cls: 'recito-tbtn recito-tbtn--ghost',
+    });
+    skipBackBtn.setAttribute('aria-label', 'Previous chunk');
+    skipBackBtn.innerHTML = ICON_SKIP_BACK;
+    skipBackBtn.addEventListener('click', () => {
+      void this.plugin.orchestrator.skipBackward();
+    });
+
+    this.playPauseBtn = transport.createEl('button', {
+      cls: 'recito-tbtn recito-tbtn--primary',
+    });
+    this.playPauseBtn.setAttribute('aria-label', 'Play/Pause');
+    this.playPauseIconState = null;
+    this.playPauseBtn.addEventListener('click', () => {
+      void this.plugin.togglePlayback();
+    });
+
+    const skipFwdBtn = transport.createEl('button', {
+      cls: 'recito-tbtn recito-tbtn--ghost',
+    });
+    skipFwdBtn.setAttribute('aria-label', 'Next chunk');
+    skipFwdBtn.innerHTML = ICON_SKIP_FWD;
+    skipFwdBtn.addEventListener('click', () => {
+      void this.plugin.orchestrator.skipForward();
+    });
+
+    const stopBtn = transport.createEl('button', {
+      cls: 'recito-tbtn recito-tbtn--ghost',
+    });
+    stopBtn.setAttribute('aria-label', 'Stop and reset to start');
+    stopBtn.setAttribute('title', 'Stop (clears resume position)');
+    stopBtn.innerHTML = ICON_STOP;
+    stopBtn.addEventListener('click', () => {
+      this.plugin.orchestrator.stopPlayback({ clearProgress: true });
+    });
+
+    // Speed segmented control
+    const speedRow = this.playingEl.createDiv({ cls: 'recito-row' });
+    speedRow.createSpan({ cls: 'recito-row-label', text: 'Speed' });
+    const segment = speedRow.createDiv({ cls: 'recito-segment' });
+    this.speedBtns.clear();
+    for (const preset of SPEED_PRESETS) {
+      const btn = segment.createEl('button', {
+        cls: 'recito-segment-btn',
+        text: `${preset}\u00D7`,
+      });
+      btn.dataset.speed = String(preset);
+      btn.addEventListener('click', () => {
+        this.plugin.orchestrator.setSpeed(preset);
+      });
+      this.speedBtns.set(preset, btn);
+    }
+
+    // Volume row with icon
+    const volumeRow = this.playingEl.createDiv({ cls: 'recito-row' });
+    const volIcon = volumeRow.createSpan({ cls: 'recito-row-icon' });
+    volIcon.innerHTML = ICON_VOLUME;
+    this.volumeSlider = volumeRow.createEl('input', {
+      cls: 'recito-volume-slider',
+    });
+    this.volumeSlider.type = 'range';
+    this.volumeSlider.min = '0';
+    this.volumeSlider.max = '1';
+    this.volumeSlider.step = '0.05';
+    this.volumeSlider.value = String(this.plugin.settings.playback.defaultVolume);
+    this.volumeSlider.addEventListener('input', () => {
+      const val = parseFloat(this.volumeSlider!.value);
+      this.plugin.orchestrator.setVolume(val);
+      this.syncVolumeFill(val);
+    });
+    this.syncVolumeFill(parseFloat(this.volumeSlider.value));
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // Render
+  // ────────────────────────────────────────────────────────────────────────
+
   private renderState(state: PlaybackState): void {
     const isIdle = state.status === 'idle';
 
-    if (this.idleEl) {
-      this.idleEl.style.display = isIdle ? '' : 'none';
-    }
-    if (this.playingEl) {
-      this.playingEl.style.display = isIdle ? 'none' : '';
-    }
+    if (this.idleEl) this.idleEl.style.display = isIdle ? '' : 'none';
+    if (this.playingEl) this.playingEl.style.display = isIdle ? 'none' : '';
 
     if (isIdle) return;
 
-    // Note title
-    if (this.noteTitleEl) {
-      const basename = this.app.workspace.getActiveFile()?.basename ?? '';
-      this.noteTitleEl.textContent = basename;
-    }
+    const title = this.app.workspace.getActiveFile()?.basename ?? '';
+    this.updateArtwork(title);
+    this.updatePlayState(state);
 
-    // Elapsed / estimated total time
-    if (this.timeEl) {
-      const avgDur = state.duration > 0 ? state.duration : AVG_CHUNK_DURATION;
-      const elapsed = state.currentChunkIndex * avgDur + state.currentTime;
-      const total = state.totalChunks * avgDur;
-      this.timeEl.textContent = `${formatTime(elapsed)} / ${formatTime(total)}`;
-    }
+    if (this.noteTitleEl) this.noteTitleEl.textContent = title;
+    if (this.providerEl) this.providerEl.textContent = this.formatProviderLabel();
 
-    // Progress bar (fraction of chunks + intra-chunk progress)
+    // Time + progress
+    const avgDur = state.duration > 0 ? state.duration : AVG_CHUNK_DURATION;
+    const elapsed = state.currentChunkIndex * avgDur + state.currentTime;
+    const total = state.totalChunks * avgDur;
+    if (this.timeElapsedEl) this.timeElapsedEl.textContent = formatTime(elapsed);
+    if (this.timeTotalEl) this.timeTotalEl.textContent = formatTime(total);
+
     if (this.progressBarFillEl && state.totalChunks > 0) {
       const overallProgress =
         (state.currentChunkIndex + state.chunkProgress) / state.totalChunks;
-      this.progressBarFillEl.style.width = `${Math.min(overallProgress * 100, 100).toFixed(2)}%`;
-    }
-
-    // Play/Pause button icon — only mutate the DOM when the icon actually
-    // changes. Rewriting innerHTML on every progress tick (~60Hz) destroys
-    // the inner <path>, which silently swallows clicks whose mousedown and
-    // mouseup straddle a render: the click event only fires when both land
-    // on the same element. That's why a single click often did nothing while
-    // keyboard space (focused on the button itself) always worked.
-    if (this.playPauseBtn) {
-      const isPlaying = state.status === 'playing';
-      const nextIcon: 'playing' | 'paused' = isPlaying ? 'playing' : 'paused';
-      if (this.playPauseIconState !== nextIcon) {
-        this.playPauseBtn.innerHTML = isPlaying
-          ? `<svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
-             </svg>`
-          : `<svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-              <path d="M8 5v14l11-7z"/>
-             </svg>`;
-        this.playPauseBtn.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
-        this.playPauseIconState = nextIcon;
+      const pct = Math.min(Math.max(overallProgress, 0), 1) * 100;
+      this.progressBarFillEl.style.width = `${pct.toFixed(2)}%`;
+      if (this.progressBarThumbEl) {
+        this.progressBarThumbEl.style.left = `${pct.toFixed(2)}%`;
       }
     }
 
-    // Speed preset buttons — highlight active
+    // Speed segment highlight
     for (const [preset, btn] of this.speedBtns) {
-      btn.toggleClass('recito-speed-btn--active', preset === state.speed);
+      btn.toggleClass('is-active', preset === state.speed);
     }
 
     // Volume slider — sync only if not actively focused to avoid jump
     if (this.volumeSlider && document.activeElement !== this.volumeSlider) {
       this.volumeSlider.value = String(state.volume);
+      this.syncVolumeFill(state.volume);
+    }
+  }
+
+  private updatePlayState(state: PlaybackState): void {
+    const status = state.status;
+
+    // Status drives both the artwork animation and the play/pause icon.
+    if (this.artworkEl) {
+      this.artworkEl.dataset.status = status;
+    }
+    if (this.playingEl) {
+      this.playingEl.dataset.status = status;
     }
 
-    // Provider display
-    if (this.providerEl) {
-      this.providerEl.textContent = this.formatProviderLabel();
+    if (this.playPauseBtn) {
+      const next: 'playing' | 'paused' | 'loading' =
+        status === 'playing'
+          ? 'playing'
+          : status === 'loading'
+            ? 'loading'
+            : 'paused';
+      // Only mutate innerHTML when the icon actually changes — rewriting on
+      // every progress tick destroys the inner <path> mid-click and silently
+      // swallows mouseup events.
+      if (this.playPauseIconState !== next) {
+        if (next === 'loading') {
+          this.playPauseBtn.innerHTML = `<span class="recito-spinner" aria-hidden="true"></span>`;
+          this.playPauseBtn.setAttribute('aria-label', 'Loading');
+        } else if (next === 'playing') {
+          this.playPauseBtn.innerHTML = ICON_PAUSE;
+          this.playPauseBtn.setAttribute('aria-label', 'Pause');
+        } else {
+          this.playPauseBtn.innerHTML = ICON_PLAY;
+          this.playPauseBtn.setAttribute('aria-label', 'Play');
+        }
+        this.playPauseIconState = next;
+      }
     }
+  }
+
+  private updateArtwork(title: string): void {
+    if (!this.artworkEl || !this.artworkLetterEl) return;
+    if (this.artworkTitle === title) return;
+    this.artworkTitle = title;
+
+    const { gradient } = gradientForTitle(title);
+    this.artworkEl.style.setProperty('--recito-art-bg', gradient);
+    this.artworkLetterEl.textContent = initialFor(title);
+  }
+
+  private syncVolumeFill(value: number): void {
+    if (!this.volumeSlider) return;
+    const pct = Math.min(Math.max(value, 0), 1) * 100;
+    this.volumeSlider.style.setProperty('--recito-vol-pct', `${pct}%`);
+  }
+
+  private handleProgressSeek(ev: MouseEvent): void {
+    if (!this.progressBarEl) return;
+    const state = this.plugin.orchestrator.getState();
+    if (state.totalChunks <= 0) return;
+    const rect = this.progressBarEl.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const ratio = Math.min(Math.max((ev.clientX - rect.left) / rect.width, 0), 1);
+    const target = Math.min(
+      Math.floor(ratio * state.totalChunks),
+      state.totalChunks - 1,
+    );
+    void this.plugin.orchestrator.skipToChunk(target);
   }
 
   private formatProviderLabel(): string {
@@ -263,7 +403,13 @@ export class RecitoSidebarView extends ItemView {
     let providerLabel = meta?.name ?? sample.providerId;
     if (isCustomGroupKey(group)) {
       const baseUrl = getCustomBaseUrlFromGroupKey(group);
-      if (baseUrl) providerLabel = `${providerLabel} · ${baseUrl}`;
+      if (baseUrl) {
+        try {
+          providerLabel = `${providerLabel} \u00B7 ${new URL(baseUrl).host}`;
+        } catch {
+          providerLabel = `${providerLabel} \u00B7 ${baseUrl}`;
+        }
+      }
     }
 
     const voiceId = this.plugin.settings.activeVoiceId ?? '';
@@ -274,6 +420,6 @@ export class RecitoSidebarView extends ItemView {
     }
 
     const parts = [providerLabel, voiceLabel].filter(Boolean);
-    return parts.join(' · ');
+    return parts.join(' \u00B7 ');
   }
 }
