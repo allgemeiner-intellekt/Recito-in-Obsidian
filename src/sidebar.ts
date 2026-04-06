@@ -112,6 +112,16 @@ export class RecitoSidebarView extends ItemView {
       void this.plugin.orchestrator.skipForward();
     });
 
+    const stopBtn = transport.createEl('button', { cls: 'recito-btn recito-stop' });
+    stopBtn.setAttribute('aria-label', 'Stop and reset to start');
+    stopBtn.setAttribute('title', 'Stop (clears resume position)');
+    stopBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+      <path d="M6 6h12v12H6z"/>
+    </svg>`;
+    stopBtn.addEventListener('click', () => {
+      this.plugin.orchestrator.stopPlayback({ clearProgress: true });
+    });
+
     // Speed presets
     const speedRow = this.playingEl.createDiv({ cls: 'recito-speed-row' });
     speedRow.createEl('span', { text: 'Speed:', cls: 'recito-label' });

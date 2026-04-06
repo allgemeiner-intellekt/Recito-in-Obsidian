@@ -51,3 +51,8 @@ export const PROGRESS_REPORT_INTERVAL_MS = 100;
 export const LOOKAHEAD_BUFFER_SIZE = 2;
 
 export const READING_PROGRESS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// Throttle for in-playback progress writes to data.json. Saves still happen
+// unconditionally on pause, stop, dispose, and when a note finishes naturally.
+export const PROGRESS_SAVE_MIN_INTERVAL_MS = 30 * 1000;
+export const PROGRESS_SAVE_CHUNK_STRIDE = 5;

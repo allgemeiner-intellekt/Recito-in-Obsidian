@@ -9,7 +9,13 @@ import { markFailed, getNextCandidate } from './providers/failover';
 import type { PlaybackSession } from './providers/failover';
 import { getCachedVoices, setCachedVoices } from './providers/voice-cache';
 import { ApiError } from './lib/api-error';
-import { LOOKAHEAD_BUFFER_SIZE, PROVIDER_SPEED_RANGES, READING_PROGRESS_MAX_AGE_MS } from './lib/constants';
+import {
+  LOOKAHEAD_BUFFER_SIZE,
+  PROVIDER_SPEED_RANGES,
+  READING_PROGRESS_MAX_AGE_MS,
+  PROGRESS_SAVE_MIN_INTERVAL_MS,
+  PROGRESS_SAVE_CHUNK_STRIDE,
+} from './lib/constants';
 import { resolveHighlightSettings } from './lib/accent-colors';
 import { startWordTiming, stopWordTiming, onPlaybackProgress } from './word-timing';
 import { initAutoScroll, destroyAutoScroll } from './highlighting/auto-scroll';
@@ -58,6 +64,10 @@ export class Orchestrator {
 
   // Chunk completion: resolve callbacks keyed by chunkIndex
   private chunkCompleteResolvers = new Map<number, () => void>();
+
+  // Throttling for progress writes during the playback loop
+  private lastProgressSaveTs = 0;
+  private lastProgressSavedChunk = -1;
 
   constructor(plugin: RecitoPlugin) {
     this.plugin = plugin;
@@ -250,6 +260,16 @@ export class Orchestrator {
     if (this.state.status !== 'playing') return;
     this.setStatus('paused');
     this.audioPlayer.pause();
+
+    // Pause is the explicit "save my place" action — flush progress immediately,
+    // bypassing the in-loop throttle.
+    if (this.notePath && this.state.currentChunkIndex > 0) {
+      void this.saveProgress(
+        this.notePath,
+        this.state.currentChunkIndex,
+        this.state.totalChunks,
+      );
+    }
   }
 
   resumePlayback(): void {
@@ -258,20 +278,30 @@ export class Orchestrator {
     this.audioPlayer.resume();
   }
 
-  stopPlayback(): void {
+  stopPlayback(opts: { clearProgress?: boolean } = {}): void {
     this.abortController?.abort();
     this.abortController = null;
     this.prefetchCache.clear();
     this.chunkCompleteResolvers.clear();
 
-    // Save progress before stopping
+    // Persist or clear position depending on intent.
+    // - clearProgress=true → user pressed "Stop": next play starts from the beginning.
+    // - clearProgress=false (default) → internal teardown / dispose: keep resume point.
     if (this.notePath && this.state.status !== 'idle') {
-      const chunkIndex = this.state.currentChunkIndex;
-      const totalChunks = this.state.totalChunks;
-      if (chunkIndex > 0) {
-        void this.saveProgress(this.notePath, chunkIndex, totalChunks);
+      if (opts.clearProgress) {
+        void this.clearProgress(this.notePath);
+      } else {
+        const chunkIndex = this.state.currentChunkIndex;
+        const totalChunks = this.state.totalChunks;
+        if (chunkIndex > 0) {
+          void this.saveProgress(this.notePath, chunkIndex, totalChunks);
+        }
       }
     }
+
+    // Reset throttle so the next session starts clean.
+    this.lastProgressSaveTs = 0;
+    this.lastProgressSavedChunk = -1;
 
     this.currentSession = null;
     stopWordTiming();
@@ -455,8 +485,19 @@ export class Orchestrator {
 
       if (signal?.aborted) return;
 
-      // Save reading progress
-      await this.saveProgress(notePath, i + 1, totalChunks);
+      // Save reading progress, throttled to avoid hammering data.json on every
+      // chunk. Pause/stop/dispose paths flush unconditionally.
+      const nextChunk = i + 1;
+      const isLastChunk = nextChunk >= totalChunks;
+      const now = Date.now();
+      const dueByTime = now - this.lastProgressSaveTs >= PROGRESS_SAVE_MIN_INTERVAL_MS;
+      const dueByStride =
+        nextChunk - this.lastProgressSavedChunk >= PROGRESS_SAVE_CHUNK_STRIDE;
+      if (isLastChunk || dueByTime || dueByStride) {
+        await this.saveProgress(notePath, nextChunk, totalChunks);
+        this.lastProgressSaveTs = now;
+        this.lastProgressSavedChunk = nextChunk;
+      }
     }
 
     // All chunks done — clear progress for this note

@@ -44,9 +44,17 @@ export default class RecitoPlugin extends Plugin {
 
     this.addCommand({
       id: 'stop-reading',
-      name: 'Stop reading',
+      name: 'Stop reading (clears resume position)',
       callback: () => {
-        this.orchestrator.stopPlayback();
+        this.orchestrator.stopPlayback({ clearProgress: true });
+      },
+    });
+
+    this.addCommand({
+      id: 'clear-progress-current-note',
+      name: 'Clear playback progress for current note',
+      callback: () => {
+        void this.clearCurrentNoteProgress();
       },
     });
 
@@ -161,6 +169,22 @@ export default class RecitoPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
+  }
+
+  async clearCurrentNoteProgress(): Promise<void> {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    const path = view?.file?.path;
+    if (!path) {
+      new Notice('Recito: Open a Markdown note first.');
+      return;
+    }
+    if (this.settings.readingProgress[path]) {
+      delete this.settings.readingProgress[path];
+      await this.saveSettings();
+      new Notice('Recito: Cleared playback progress for this note.');
+    } else {
+      new Notice('Recito: No saved progress for this note.');
+    }
   }
 
   cleanOldProgress(): void {
