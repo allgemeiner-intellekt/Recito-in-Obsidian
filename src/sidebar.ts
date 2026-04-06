@@ -27,6 +27,7 @@ export class RecitoSidebarView extends ItemView {
   private timeEl: HTMLElement | null = null;
   private progressBarFillEl: HTMLElement | null = null;
   private playPauseBtn: HTMLButtonElement | null = null;
+  private playPauseIconState: 'playing' | 'paused' | null = null;
   private speedBtns: Map<number, HTMLButtonElement> = new Map();
   private volumeSlider: HTMLInputElement | null = null;
   private providerEl: HTMLElement | null = null;
@@ -98,6 +99,7 @@ export class RecitoSidebarView extends ItemView {
 
     this.playPauseBtn = transport.createEl('button', { cls: 'recito-btn recito-play-pause' });
     this.playPauseBtn.setAttribute('aria-label', 'Play/Pause');
+    this.playPauseIconState = null;
     this.playPauseBtn.addEventListener('click', () => {
       void this.plugin.togglePlayback();
     });
@@ -204,17 +206,26 @@ export class RecitoSidebarView extends ItemView {
       this.progressBarFillEl.style.width = `${Math.min(overallProgress * 100, 100).toFixed(2)}%`;
     }
 
-    // Play/Pause button icon
+    // Play/Pause button icon — only mutate the DOM when the icon actually
+    // changes. Rewriting innerHTML on every progress tick (~60Hz) destroys
+    // the inner <path>, which silently swallows clicks whose mousedown and
+    // mouseup straddle a render: the click event only fires when both land
+    // on the same element. That's why a single click often did nothing while
+    // keyboard space (focused on the button itself) always worked.
     if (this.playPauseBtn) {
       const isPlaying = state.status === 'playing';
-      this.playPauseBtn.innerHTML = isPlaying
-        ? `<svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
-           </svg>`
-        : `<svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-            <path d="M8 5v14l11-7z"/>
-           </svg>`;
-      this.playPauseBtn.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
+      const nextIcon: 'playing' | 'paused' = isPlaying ? 'playing' : 'paused';
+      if (this.playPauseIconState !== nextIcon) {
+        this.playPauseBtn.innerHTML = isPlaying
+          ? `<svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+             </svg>`
+          : `<svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+              <path d="M8 5v14l11-7z"/>
+             </svg>`;
+        this.playPauseBtn.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
+        this.playPauseIconState = nextIcon;
+      }
     }
 
     // Speed preset buttons — highlight active
