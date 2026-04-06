@@ -12,6 +12,7 @@ import {
   getCustomBaseUrlFromGroupKey,
   normalizeBaseUrl,
 } from './lib/group-key';
+import { buildExport, applyImport } from './lib/settings-io';
 
 function maskKey(key: string): string {
   if (!key) return '(no key)';
@@ -65,6 +66,7 @@ export class RecitoSettingTab extends PluginSettingTab {
     this.renderVoiceSection(containerEl);
     this.renderPlaybackSection(containerEl);
     this.renderAppearanceSection(containerEl);
+    this.renderBackupSection(containerEl);
   }
 
   // =========================================================================
@@ -95,9 +97,13 @@ export class RecitoSettingTab extends PluginSettingTab {
     );
     for (const groupKey of customGroupKeys) {
       const baseUrl = getCustomBaseUrlFromGroupKey(groupKey);
+      const poolMembers = customConfigs.filter((c) => getGroupKey(c) === groupKey);
+      const customTitle =
+        poolMembers.find((c) => c.name && c.name.trim())?.name?.trim() ||
+        'Custom (OpenAI-compatible)';
       this.renderPoolCard(containerEl, {
         groupKey,
-        title: 'Custom (OpenAI-compatible)',
+        title: customTitle,
         description: baseUrl || '(no base URL)',
         providerId: 'custom',
         providerName: 'Custom (OpenAI-compatible)',
@@ -217,9 +223,6 @@ export class RecitoSettingTab extends PluginSettingTab {
     const info = row.createDiv({ cls: 'recito-key-info' });
     const titleLine = info.createDiv({ cls: 'recito-key-title' });
     titleLine.createSpan({ text: maskKey(config.apiKey), cls: 'recito-key-mask' });
-    if (config.name && config.name !== providerId) {
-      titleLine.createSpan({ text: config.name, cls: 'recito-key-name' });
-    }
     if (isDisabled) {
       titleLine.createSpan({ text: 'Disabled', cls: 'recito-badge recito-badge--muted' });
     }
@@ -366,9 +369,17 @@ export class RecitoSettingTab extends PluginSettingTab {
 
     const meta = PROVIDER_LIST.find((m) => m.id === active.providerId);
     const activeGroup = this.plugin.settings.activeProviderGroup ?? '';
-    const label = isCustomGroupKey(activeGroup)
-      ? `${meta?.name ?? active.providerId} · ${getCustomBaseUrlFromGroupKey(activeGroup) || '(no base URL)'}`
-      : (meta?.name ?? active.providerId);
+    let label: string;
+    if (isCustomGroupKey(activeGroup)) {
+      const poolMembers = configsInGroup(this.plugin.settings.providers, activeGroup);
+      const customName =
+        poolMembers.find((c) => c.name && c.name.trim())?.name?.trim() ||
+        meta?.name ||
+        active.providerId;
+      label = `${customName} · ${getCustomBaseUrlFromGroupKey(activeGroup) || '(no base URL)'}`;
+    } else {
+      label = meta?.name ?? active.providerId;
+    }
     body.createEl('div', {
       text: `Active pool: ${label}`,
       cls: 'recito-key-sub',
@@ -533,6 +544,82 @@ export class RecitoSettingTab extends PluginSettingTab {
         });
       });
   }
+
+  // =========================================================================
+  // Backup section
+  // =========================================================================
+
+  private renderBackupSection(containerEl: HTMLElement): void {
+    containerEl.createEl('h3', { text: 'Backup', cls: 'recito-section-heading' });
+    const card = containerEl.createDiv({ cls: 'recito-card recito-card--settings' });
+
+    new Setting(card)
+      .setName('Export settings')
+      .setDesc(
+        'Save all providers and settings as a JSON file. The same file format is shared with the Recito Chrome extension.',
+      )
+      .addButton((btn) => {
+        btn.setButtonText('Export').onClick(() => {
+          try {
+            const envelope = buildExport(this.plugin.settings);
+            const blob = new Blob([JSON.stringify(envelope, null, 2)], {
+              type: 'application/json',
+            });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'recito-settings.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            new Notice('Settings exported.');
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            new Notice(`Export failed: ${msg}`);
+          }
+        });
+      });
+
+    new Setting(card)
+      .setName('Import settings')
+      .setDesc(
+        'Replace your current providers and settings with a previously exported JSON file. Reading progress is preserved.',
+      )
+      .addButton((btn) => {
+        btn.setButtonText('Import…').onClick(() => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.json,application/json';
+          input.onchange = async () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            try {
+              const text = await file.text();
+              const parsed = JSON.parse(text);
+              const result = applyImport(this.plugin.settings, parsed);
+
+              new ConfirmImportModal(
+                this.app,
+                this.plugin.settings.providers.length,
+                result.providerCount,
+                async () => {
+                  this.plugin.settings = result.next;
+                  await this.plugin.saveSettings();
+                  this.display();
+                  new Notice('Settings imported.');
+                  for (const w of result.warnings) {
+                    new Notice(w);
+                  }
+                },
+              ).open();
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              new Notice(`Import failed: ${msg}`);
+            }
+          };
+          input.click();
+        });
+      });
+  }
 }
 
 // =========================================================================
@@ -586,17 +673,19 @@ class ProviderModal extends Modal {
       text: `${this.existing ? 'Edit' : 'Add'} ${this.providerName} key`,
     });
 
-    new Setting(contentEl)
-      .setName('Display name')
-      .setDesc('Optional label to identify this key.')
-      .addText((text) => {
-        text
-          .setPlaceholder(this.providerName)
-          .setValue(this.displayName)
-          .onChange((value) => {
-            this.displayName = value;
-          });
-      });
+    if (this.providerId === 'custom') {
+      new Setting(contentEl)
+        .setName('Display name')
+        .setDesc('Label shown as this provider\'s title in settings.')
+        .addText((text) => {
+          text
+            .setPlaceholder(this.providerName)
+            .setValue(this.displayName)
+            .onChange((value) => {
+              this.displayName = value;
+            });
+        });
+    }
 
     new Setting(contentEl)
       .setName('API key')
@@ -685,6 +774,60 @@ class ProviderModal extends Modal {
             };
 
             this.onSubmit(config);
+            this.close();
+          });
+      });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+// =========================================================================
+// Confirm Import Modal
+// =========================================================================
+
+class ConfirmImportModal extends Modal {
+  private currentCount: number;
+  private incomingCount: number;
+  private onConfirm: () => void;
+
+  constructor(
+    app: App,
+    currentCount: number,
+    incomingCount: number,
+    onConfirm: () => void,
+  ) {
+    super(app);
+    this.currentCount = currentCount;
+    this.incomingCount = incomingCount;
+    this.onConfirm = onConfirm;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass('recito-provider-modal');
+
+    contentEl.createEl('h3', { text: 'Import settings?' });
+    contentEl.createEl('p', {
+      text:
+        `This will import ${this.incomingCount} provider${this.incomingCount === 1 ? '' : 's'} ` +
+        `and overwrite your current settings. Your current ${this.currentCount} provider` +
+        `${this.currentCount === 1 ? '' : 's'} will be replaced. Reading progress will be kept.`,
+    });
+
+    new Setting(contentEl)
+      .addButton((btn) => {
+        btn.setButtonText('Cancel').onClick(() => this.close());
+      })
+      .addButton((btn) => {
+        btn
+          .setButtonText('Import')
+          .setCta()
+          .onClick(() => {
+            this.onConfirm();
             this.close();
           });
       });
