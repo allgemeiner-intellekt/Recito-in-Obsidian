@@ -760,11 +760,6 @@
   color: var(--text-normal);
 }
 
-.recito-key-name {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
 .recito-key-sub {
   font-size: 11px;
   color: var(--text-muted);
