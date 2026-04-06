@@ -19,6 +19,9 @@ export const DEFAULT_SETTINGS: RecitoSettings = {
     autoScroll: true,
   },
   readingProgress: {},
+  ui: {
+    artworkCollapsed: false,
+  },
 };
 
 export const ACCENT_COLOR_PRESETS = [

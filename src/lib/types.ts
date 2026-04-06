@@ -119,6 +119,11 @@ export interface PlaybackSettings {
   autoScrollEnabled: boolean;
 }
 
+export interface UiSettings {
+  /** Collapse the sidebar artwork into a small inline icon. */
+  artworkCollapsed: boolean;
+}
+
 export interface RecitoSettings {
   providers: ProviderConfig[];
   activeProviderGroup: string | null;
@@ -127,6 +132,7 @@ export interface RecitoSettings {
   highlight: HighlightSettings;
   accentColor: string | null;
   readingProgress: Record<string, ReadingProgress>;
+  ui: UiSettings;
 }
 
 export interface ReadingProgress {

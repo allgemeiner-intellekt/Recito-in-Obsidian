@@ -132,6 +132,20 @@
   gap: 16px;
 }
 
+/* Hero block — wraps artwork + meta. Default: stacked. Collapsed: row. */
+.recito-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.recito-hero--collapsed {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
 /* Artwork tile — vinyl record */
 .recito-artwork {
   position: relative;
@@ -256,6 +270,92 @@
   pointer-events: none;
   z-index: 5;
   mix-blend-mode: screen;
+}
+
+/* Collapse / expand toggle button (overlays artwork top-right) */
+.recito-artwork-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 6;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.15s ease;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.recito-artwork-toggle svg {
+  width: 13px;
+  height: 13px;
+}
+
+.recito-artwork:hover .recito-artwork-toggle,
+.recito-artwork:focus-within .recito-artwork-toggle {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.recito-artwork-toggle:hover {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+/* ── Collapsed artwork ─────────────────────────────────────────────────── */
+
+/* When collapsed, the artwork shrinks to a small inline disc next to the
+   meta. The disc keeps its spin animation so the playback state is still
+   visible at a glance. */
+.recito-hero--collapsed .recito-artwork {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  max-height: none;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: 0 4px 10px -4px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+
+.recito-hero--collapsed .recito-vinyl {
+  width: 100%;
+}
+
+.recito-hero--collapsed .recito-vinyl-grooves {
+  inset: 2%;
+}
+
+.recito-hero--collapsed .recito-vinyl-label {
+  /* Slightly larger label proportion so the gradient is still readable
+     at small size */
+  width: 42%;
+}
+
+.recito-hero--collapsed .recito-vinyl-hole {
+  width: 18%;
+}
+
+/* Hide the overlay toggle when collapsed — the disc itself is the affordance.
+   Also hide the static shine since at 44px it just looks like noise. */
+.recito-hero--collapsed .recito-artwork-toggle,
+.recito-hero--collapsed .recito-artwork-shine {
+  display: none;
+}
+
+.recito-hero--collapsed .recito-meta {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* Now-playing meta */
