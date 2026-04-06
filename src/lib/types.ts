@@ -133,6 +133,10 @@ export interface RecitoSettings {
   accentColor: string | null;
   readingProgress: Record<string, ReadingProgress>;
   ui: UiSettings;
+  /** Opaque passthrough for cross-tool import: foreign settings keys
+   *  this side doesn't recognize, kept verbatim so they round-trip on
+   *  re-export. */
+  _foreign?: Record<string, unknown>;
 }
 
 export interface ReadingProgress {
