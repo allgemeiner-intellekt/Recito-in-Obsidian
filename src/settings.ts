@@ -585,7 +585,7 @@ export class RecitoSettingTab extends PluginSettingTab {
         'Replace your current providers and settings with a previously exported JSON file. Reading progress is preserved.',
       )
       .addButton((btn) => {
-        btn.setButtonText('Import…').onClick(() => {
+        btn.setButtonText('Import').onClick(() => {
           const input = document.createElement('input');
           input.type = 'file';
           input.accept = '.json,application/json';

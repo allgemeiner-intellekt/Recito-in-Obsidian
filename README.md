@@ -1,90 +1,101 @@
-# Obsidian Sample Plugin
+# Recito
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+Read your Obsidian notes aloud with karaoke-style word and sentence highlighting.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+Recito streams text-to-speech from your chosen provider, highlights each word as it's spoken, and lets you click any sentence to jump there. It's designed for reading long notes the way you'd listen to a podcast — with your place saved automatically so you can come back later.
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+## Features
 
-## First time developing plugins?
+- **Karaoke-style highlighting** — words and sentences highlight in sync with audio using the CSS Highlight API
+- **Click-to-seek** — click any sentence in the reading view to jump there and keep playing
+- **Gapless playback** — chunks are prefetched and scheduled via the Web Audio API, so you don't hear seams
+- **5 TTS providers** — OpenAI, ElevenLabs, Groq, Mimo, and any custom OpenAI-compatible endpoint
+- **API key pooling** — add multiple keys per provider; Recito fails over automatically when one is rate-limited or exhausted
+- **Resume where you left off** — Recito remembers your playback position per-note
+- **Sidebar panel** — dedicated playback controls in a sidebar view
+- **Commands & hotkeys** — bind start/pause/stop/skip to your own keybindings
+- **Desktop only** — uses the Web Audio API and direct network calls to TTS providers
 
-Quick starting guide for new plugin devs:
+## Requirements
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+- Obsidian 1.5.0 or later
+- Desktop (Windows / macOS / Linux) — this plugin does not run on mobile
+- An API key from at least one of: OpenAI, ElevenLabs, Groq, Mimo, or any OpenAI-compatible TTS endpoint
 
-## Releasing new releases
+## Installation
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+Recito is not yet in the Obsidian community plugin store. Install it manually:
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+1. Go to the [Releases page](https://github.com/allgemeiner-intellekt/Recito-in-Obsidian/releases) and download `main.js`, `manifest.json`, and `styles.css` from the latest release.
+2. In your vault, create a folder at `<vault>/.obsidian/plugins/recito/`.
+3. Copy the three files into that folder.
+4. In Obsidian, go to **Settings → Community plugins**, enable community plugins if you haven't, then toggle **Recito** on in the **Installed plugins** list.
 
-## Adding your plugin to the community plugin list
+You may need to reload Obsidian (Ctrl/Cmd+R) after the first install.
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+### Updating
 
-## How to use
+Re-download the three files from the newest release and overwrite them in the same folder. Disable and re-enable the plugin in Obsidian to reload it.
 
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
+## Setup
 
-## Manually installing the plugin
+1. Open **Settings → Recito**.
+2. Under **TTS Providers**, pick a provider and add at least one API key. You can add multiple keys to the same provider — Recito will rotate through them on failure.
+3. Under **Voice**, Recito will fetch the voice list from the provider using your key. Pick a voice.
+4. Optionally tweak playback settings (speed, chunk size, etc.) and appearance.
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
+### Getting API keys
 
-## Improve code quality with eslint
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
+- **OpenAI** — https://platform.openai.com/api-keys
+- **ElevenLabs** — https://elevenlabs.io/app/settings/api-keys
+- **Groq** — https://console.groq.com/keys
+- **Mimo** — see the Mimo dashboard for your provider
+- **Custom** — any OpenAI-compatible `/v1/audio/speech` endpoint
 
-## Funding URL
+Your keys are stored only in this plugin's local data file (`.obsidian/plugins/recito/data.json`) and never leave your machine except when making requests to the TTS provider you configured.
 
-You can include funding URLs where people who use your plugin can financially support it.
+## Usage
 
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
+- Open a note in **reading view** (the "book" icon, not edit mode).
+- Click the **headphones ribbon icon** on the left, or run the command **Recito: Start reading**.
+- The sidebar panel opens on the right with transport controls.
+- Click any sentence in the note to jump to it.
+- Switching to another note automatically pauses playback.
 
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
+### Commands
+
+All commands are available in Obsidian's command palette and can be bound to hotkeys under **Settings → Hotkeys**:
+
+- **Recito: Start reading**
+- **Recito: Pause / Resume**
+- **Recito: Stop reading** (clears resume position)
+- **Recito: Clear playback progress for current note**
+- **Recito: Skip forward**
+- **Recito: Skip backward**
+- **Recito: Toggle Recito sidebar**
+
+## Backup & restore
+
+Settings → Recito → **Backup** lets you export your full configuration (providers, keys, voices, playback preferences) as a JSON file and re-import it later. Useful when setting up Recito on a second machine.
+
+## Known limitations
+
+- **Reading view only** — highlighting requires the rendered preview DOM; it will not work in edit / live-preview mode.
+- **Desktop only** — mobile Obsidian does not expose the APIs Recito needs.
+- **Your own API costs** — every request hits your configured TTS provider and uses your credits.
+
+## Development
+
+```bash
+npm install
+npm run dev    # watch mode, rebuilds main.js on changes
+npm run build  # production (type-check + minify)
+npm test       # unit tests
+npm run lint   # eslint with obsidianmd rules
 ```
 
-If you have multiple URLs, you can also do:
+To develop against a real vault, symlink or clone this repo into `<vault>/.obsidian/plugins/recito/`.
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
-```
+## License
 
-## API Documentation
-
-See https://docs.obsidian.md
+[0BSD](./LICENSE) — do anything you want with it.

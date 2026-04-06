@@ -582,7 +582,7 @@ export class Orchestrator {
           );
         }
 
-        console.log(`[Recito] Failover: switching from config ${failedConfigId} to ${candidate.id}`);
+        console.debug(`[Recito] Failover: switching from config ${failedConfigId} to ${candidate.id}`);
         this.currentSession = {
           ...this.currentSession!,
           config: candidate,

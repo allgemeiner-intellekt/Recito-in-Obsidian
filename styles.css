@@ -658,6 +658,9 @@
 }
 
 .recito-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-normal);
@@ -767,19 +770,24 @@
 }
 
 .recito-badge {
-  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 9px;
   font-weight: 600;
+  line-height: 1;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-  padding: 1px 6px;
-  border-radius: 4px;
+  letter-spacing: 0.06em;
+  background: transparent;
+  color: var(--interactive-accent);
+  padding: 3px 7px;
+  border: 1px solid var(--interactive-accent);
+  border-radius: 999px;
 }
 
 .recito-badge--muted {
-  background: var(--background-modifier-border);
+  background: transparent;
   color: var(--text-muted);
+  border-color: var(--background-modifier-border);
 }
 
 .recito-key-row.is-disabled {

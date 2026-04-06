@@ -2,8 +2,9 @@
 	"id": "recito",
 	"name": "Recito",
 	"version": "1.0.0",
-	"minAppVersion": "0.15.0",
+	"minAppVersion": "1.5.0",
 	"description": "Read your notes aloud with karaoke-style word highlighting. Supports OpenAI, ElevenLabs, Groq, Mimo, and custom TTS providers.",
 	"author": "allgemeiner-intellekt",
+	"authorUrl": "https://github.com/allgemeiner-intellekt",
 	"isDesktopOnly": true
 }

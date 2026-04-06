@@ -102,7 +102,6 @@ export default class RecitoPlugin extends Plugin {
 
   onunload(): void {
     this.orchestrator.dispose();
-    this.app.workspace.detachLeavesOfType(SIDEBAR_VIEW_TYPE);
   }
 
   async startPlayback(): Promise<void> {
@@ -186,14 +185,14 @@ export default class RecitoPlugin extends Plugin {
   async activateSidebar(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
     if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]!);
+      await this.app.workspace.revealLeaf(existing[0]!);
       return;
     }
 
     const leaf = this.app.workspace.getRightLeaf(false);
     if (leaf) {
       await leaf.setViewState({ type: SIDEBAR_VIEW_TYPE, active: true });
-      this.app.workspace.revealLeaf(leaf);
+      await this.app.workspace.revealLeaf(leaf);
     }
   }
 
