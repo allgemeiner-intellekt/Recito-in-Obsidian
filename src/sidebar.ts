@@ -2,6 +2,13 @@ import { ItemView, WorkspaceLeaf } from 'obsidian';
 import type RecitoPlugin from './main';
 import type { PlaybackState } from './lib/types';
 import { SPEED_PRESETS } from './lib/constants';
+import { PROVIDER_LIST } from './providers/registry';
+import {
+  configsInGroup,
+  isCustomGroupKey,
+  getCustomBaseUrlFromGroupKey,
+} from './lib/group-key';
+import { getCachedVoices } from './providers/voice-cache';
 
 export const SIDEBAR_VIEW_TYPE = 'recito-sidebar';
 
@@ -240,10 +247,33 @@ export class RecitoSidebarView extends ItemView {
 
     // Provider display
     if (this.providerEl) {
-      const groupId = this.plugin.settings.activeProviderGroup ?? '';
-      const voiceId = this.plugin.settings.activeVoiceId ?? '';
-      const parts = [groupId, voiceId].filter(Boolean);
-      this.providerEl.textContent = parts.length > 0 ? parts.join(' · ') : '';
+      this.providerEl.textContent = this.formatProviderLabel();
     }
+  }
+
+  private formatProviderLabel(): string {
+    const group = this.plugin.settings.activeProviderGroup;
+    if (!group) return '';
+
+    const pool = configsInGroup(this.plugin.settings.providers, group);
+    const sample = pool.find((p) => !p.disabled) ?? pool[0];
+    if (!sample) return '';
+
+    const meta = PROVIDER_LIST.find((m) => m.id === sample.providerId);
+    let providerLabel = meta?.name ?? sample.providerId;
+    if (isCustomGroupKey(group)) {
+      const baseUrl = getCustomBaseUrlFromGroupKey(group);
+      if (baseUrl) providerLabel = `${providerLabel} · ${baseUrl}`;
+    }
+
+    const voiceId = this.plugin.settings.activeVoiceId ?? '';
+    let voiceLabel = '';
+    if (voiceId) {
+      const voices = getCachedVoices(sample.id);
+      voiceLabel = voices?.find((v) => v.id === voiceId)?.name ?? voiceId;
+    }
+
+    const parts = [providerLabel, voiceLabel].filter(Boolean);
+    return parts.join(' · ');
   }
 }

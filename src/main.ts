@@ -1,6 +1,7 @@
 import { MarkdownView, Notice, Plugin, WorkspaceLeaf } from 'obsidian';
 import { RecitoSettings } from './lib/types';
 import { DEFAULT_SETTINGS, READING_PROGRESS_MAX_AGE_MS } from './lib/constants';
+import { getGroupKey } from './lib/group-key';
 import { Orchestrator } from './orchestrator';
 import { RecitoSidebarView, SIDEBAR_VIEW_TYPE } from './sidebar';
 import { RecitoSettingTab } from './settings';
@@ -211,6 +212,34 @@ export default class RecitoPlugin extends Plugin {
       DEFAULT_SETTINGS,
       (await this.loadData()) as Partial<RecitoSettings>,
     );
+    this.migrateActiveProviderGroup();
+  }
+
+  /**
+   * Legacy: `activeProviderGroup` used to store a per-key config id.
+   * It now stores a group key (provider pool). Rewrite if we detect the old form.
+   */
+  private migrateActiveProviderGroup(): void {
+    const current = this.settings.activeProviderGroup;
+    const providers = this.settings.providers;
+
+    if (!current) return;
+
+    // If current matches an existing config id, it's the legacy form — rewrite.
+    const legacyMatch = providers.find((p) => p.id === current);
+    if (legacyMatch) {
+      this.settings.activeProviderGroup = getGroupKey(legacyMatch);
+      return;
+    }
+
+    // If current already matches a known group, leave it.
+    const groupExists = providers.some((p) => getGroupKey(p) === current);
+    if (groupExists) return;
+
+    // Stale value with no matching pool — fall back to first provider's group, or null.
+    this.settings.activeProviderGroup = providers[0]
+      ? getGroupKey(providers[0])
+      : null;
   }
 
   async saveSettings(): Promise<void> {

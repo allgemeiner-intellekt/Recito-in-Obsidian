@@ -99,9 +99,10 @@ export async function getNextCandidate(
   failedConfigId: string,
   allConfigs: ProviderConfig[],
 ): Promise<ProviderConfig | null> {
-  // Filter to same provider type (and same baseUrl for custom)
+  // Filter to same provider type (and same baseUrl for custom), excluding disabled.
   const candidates = allConfigs.filter((c) => {
     if (c.id === failedConfigId) return false;
+    if (c.disabled) return false;
     if (c.providerId !== session.providerId) return false;
     // For custom providers, must share the same base URL
     if (c.providerId === 'custom') {

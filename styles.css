@@ -209,6 +209,23 @@
   flex: 0 0 auto;
 }
 
+.recito-card-header-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.recito-card.is-active {
+  border-color: var(--interactive-accent);
+}
+
+.recito-add-custom-row {
+  display: flex;
+  justify-content: flex-start;
+  margin: 4px 0 16px;
+}
+
 .recito-card-body {
   padding: 8px 14px 12px;
 }
@@ -299,6 +316,15 @@
   color: var(--text-on-accent);
   padding: 1px 6px;
   border-radius: 4px;
+}
+
+.recito-badge--muted {
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.recito-key-row.is-disabled {
+  opacity: 0.55;
 }
 
 .recito-key-actions {

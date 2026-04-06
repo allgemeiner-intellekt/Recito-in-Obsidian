@@ -1,13 +1,14 @@
 import type RecitoPlugin from './main';
-import type { PlaybackState, TextChunk, PlaybackStatus } from './lib/types';
+import type { PlaybackState, TextChunk, PlaybackStatus, ProviderConfig } from './lib/types';
 import { AudioPlayer } from './audio-player';
 import { HighlightManager } from './highlighting/highlight-manager';
 import { extractFromReadingView } from './extraction/extractor';
 import { chunkText } from './extraction/chunker';
 import { getProvider, getChunkLimits } from './providers/registry';
-import { markFailed, getNextCandidate } from './providers/failover';
+import { markFailed, getNextCandidate, getHealth } from './providers/failover';
 import type { PlaybackSession } from './providers/failover';
 import { getCachedVoices, setCachedVoices } from './providers/voice-cache';
+import { getGroupKey } from './lib/group-key';
 import { ApiError } from './lib/api-error';
 import {
   LOOKAHEAD_BUFFER_SIZE,
@@ -133,15 +134,24 @@ export class Orchestrator {
       throw new Error('No TTS provider configured. Please add one in Settings.');
     }
 
-    // Use activeProviderGroup if set, otherwise use first provider
-    const activeGroupId = settings.activeProviderGroup;
-    const providerConfig = activeGroupId
-      ? (providers.find((p) => p.id === activeGroupId) ?? providers[0])
-      : providers[0];
+    // Resolve the active pool. activeProviderGroup is a group key (provider type or
+    // custom@<baseUrl>). Pick the first enabled, healthy key in that pool. If none
+    // are healthy, fall back to the first enabled key and let failover try.
+    const activeGroup = settings.activeProviderGroup;
+    const pool = activeGroup
+      ? providers.filter((p) => !p.disabled && getGroupKey(p) === activeGroup)
+      : providers.filter((p) => !p.disabled);
 
-    if (!providerConfig) {
-      throw new Error('No TTS provider configured. Please add one in Settings.');
+    if (pool.length === 0) {
+      throw new Error(
+        activeGroup
+          ? 'No enabled keys in the active provider pool. Enable a key or pick a different provider in Settings.'
+          : 'No enabled TTS provider keys. Add or enable one in Settings.',
+      );
     }
+
+    const providerConfig: ProviderConfig =
+      pool.find((p) => getHealth(p.id).status === 'healthy') ?? pool[0]!;
 
     const provider = getProvider(providerConfig.providerId);
 

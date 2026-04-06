@@ -7,6 +7,8 @@ export interface ProviderConfig {
   apiKey: string;
   baseUrl?: string;
   extraParams?: Record<string, unknown>;
+  /** When true, this key is excluded from pool selection and failover. */
+  disabled?: boolean;
 }
 
 export interface Voice {

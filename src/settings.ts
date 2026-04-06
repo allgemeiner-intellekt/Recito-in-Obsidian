@@ -5,6 +5,13 @@ import { DEFAULT_SETTINGS } from './lib/constants';
 import { PROVIDER_LIST, getProvider } from './providers/registry';
 import { ELEVENLABS_MODELS } from './providers/elevenlabs';
 import { getCachedVoices, setCachedVoices, invalidateVoiceCache } from './providers/voice-cache';
+import {
+  getGroupKey,
+  configsInGroup,
+  isCustomGroupKey,
+  getCustomBaseUrlFromGroupKey,
+  normalizeBaseUrl,
+} from './lib/group-key';
 
 function maskKey(key: string): string {
   if (!key) return '(no key)';
@@ -12,10 +19,33 @@ function maskKey(key: string): string {
   return '••••' + key.slice(-4);
 }
 
-function getActiveConfig(plugin: RecitoPlugin): ProviderConfig | null {
-  const id = plugin.settings.activeProviderGroup;
-  if (!id) return null;
-  return plugin.settings.providers.find((p) => p.id === id) ?? null;
+/**
+ * Pick a representative config from the active pool — used for the Voice
+ * section, which needs *some* key to fetch the voice list. Prefers enabled
+ * keys; falls back to any.
+ */
+function getActivePoolRepresentative(plugin: RecitoPlugin): ProviderConfig | null {
+  const group = plugin.settings.activeProviderGroup;
+  if (!group) return null;
+  const pool = configsInGroup(plugin.settings.providers, group);
+  if (pool.length === 0) return null;
+  return pool.find((p) => !p.disabled) ?? pool[0] ?? null;
+}
+
+/**
+ * After deleting/changing membership, ensure activeProviderGroup still points
+ * at an existing pool. Switch to the first remaining pool if not. Returns true
+ * if the active group changed (caller should clear activeVoiceId).
+ */
+function ensureActiveGroupValid(plugin: RecitoPlugin): boolean {
+  const providers = plugin.settings.providers;
+  const current = plugin.settings.activeProviderGroup;
+  if (current && providers.some((p) => getGroupKey(p) === current)) {
+    return false;
+  }
+  const next = providers[0] ? getGroupKey(providers[0]) : null;
+  plugin.settings.activeProviderGroup = next;
+  return true;
 }
 
 export class RecitoSettingTab extends PluginSettingTab {
@@ -44,55 +74,144 @@ export class RecitoSettingTab extends PluginSettingTab {
   private renderProvidersSection(containerEl: HTMLElement): void {
     containerEl.createEl('h3', { text: 'TTS Providers', cls: 'recito-section-heading' });
 
+    // Built-in providers: one card per provider type.
     for (const meta of PROVIDER_LIST) {
-      const card = containerEl.createDiv({ cls: 'recito-card' });
-
-      // Header: name + description + Add key button
-      const header = card.createDiv({ cls: 'recito-card-header' });
-      const headerText = header.createDiv({ cls: 'recito-card-header-text' });
-      headerText.createEl('div', { text: meta.name, cls: 'recito-card-title' });
-      headerText.createEl('div', { text: meta.description, cls: 'recito-card-desc' });
-
-      const addBtn = header.createEl('button', {
-        text: '+ Add key',
-        cls: 'mod-cta recito-card-action',
+      if (meta.id === 'custom') continue;
+      this.renderPoolCard(containerEl, {
+        groupKey: meta.id,
+        title: meta.name,
+        description: meta.description,
+        providerId: meta.id,
+        providerName: meta.name,
       });
-      addBtn.addEventListener('click', () => {
-        new ProviderModal(this.app, meta.id, meta.name, null, async (config) => {
+    }
+
+    // Custom providers: one card per unique baseUrl, then a bottom button.
+    const customConfigs = this.plugin.settings.providers.filter(
+      (p) => p.providerId === 'custom',
+    );
+    const customGroupKeys = Array.from(
+      new Set(customConfigs.map((c) => getGroupKey(c))),
+    );
+    for (const groupKey of customGroupKeys) {
+      const baseUrl = getCustomBaseUrlFromGroupKey(groupKey);
+      this.renderPoolCard(containerEl, {
+        groupKey,
+        title: 'Custom (OpenAI-compatible)',
+        description: baseUrl || '(no base URL)',
+        providerId: 'custom',
+        providerName: 'Custom (OpenAI-compatible)',
+      });
+    }
+
+    // Bottom-of-section: + Add custom provider
+    const customAddRow = containerEl.createDiv({ cls: 'recito-add-custom-row' });
+    const addCustomBtn = customAddRow.createEl('button', {
+      text: '+ Add custom provider',
+      cls: 'mod-cta',
+    });
+    addCustomBtn.addEventListener('click', () => {
+      new ProviderModal(
+        this.app,
+        'custom',
+        'Custom (OpenAI-compatible)',
+        null,
+        async (config) => {
           this.plugin.settings.providers.push(config);
           if (!this.plugin.settings.activeProviderGroup) {
-            this.plugin.settings.activeProviderGroup = config.id;
+            this.plugin.settings.activeProviderGroup = getGroupKey(config);
+          }
+          await this.plugin.saveSettings();
+          this.display();
+        },
+      ).open();
+    });
+  }
+
+  private renderPoolCard(
+    containerEl: HTMLElement,
+    opts: {
+      groupKey: string;
+      title: string;
+      description: string;
+      providerId: string;
+      providerName: string;
+    },
+  ): void {
+    const { groupKey, title, description, providerId, providerName } = opts;
+    const isActive = this.plugin.settings.activeProviderGroup === groupKey;
+
+    const card = containerEl.createDiv({
+      cls: 'recito-card' + (isActive ? ' is-active' : ''),
+    });
+
+    // Header
+    const header = card.createDiv({ cls: 'recito-card-header' });
+    const headerText = header.createDiv({ cls: 'recito-card-header-text' });
+    const titleLine = headerText.createDiv({ cls: 'recito-card-title' });
+    titleLine.createSpan({ text: title });
+    if (isActive) {
+      titleLine.createSpan({ text: 'Active', cls: 'recito-badge' });
+    }
+    headerText.createEl('div', { text: description, cls: 'recito-card-desc' });
+
+    const headerActions = header.createDiv({ cls: 'recito-card-header-actions' });
+
+    if (!isActive) {
+      const setActiveBtn = headerActions.createEl('button', { text: 'Set active' });
+      setActiveBtn.addEventListener('click', async () => {
+        this.plugin.settings.activeProviderGroup = groupKey;
+        // Clear voice — different pool likely has different voices.
+        this.plugin.settings.activeVoiceId = null;
+        await this.plugin.saveSettings();
+        this.display();
+      });
+    }
+
+    // For built-in providers, the Add Key button creates a new key in this pool.
+    // For custom, adding a key may belong to a different baseUrl, so the
+    // bottom-of-section button is the right place. We still expose Add Key on the
+    // header for built-ins.
+    if (providerId !== 'custom') {
+      const addBtn = headerActions.createEl('button', {
+        text: '+ Add key',
+        cls: 'mod-cta',
+      });
+      addBtn.addEventListener('click', () => {
+        new ProviderModal(this.app, providerId, providerName, null, async (config) => {
+          this.plugin.settings.providers.push(config);
+          if (!this.plugin.settings.activeProviderGroup) {
+            this.plugin.settings.activeProviderGroup = getGroupKey(config);
           }
           await this.plugin.saveSettings();
           this.display();
         }).open();
       });
+    }
 
-      // Key list
-      const configured = this.plugin.settings.providers.filter(
-        (p) => p.providerId === meta.id,
-      );
-
-      const body = card.createDiv({ cls: 'recito-card-body' });
-      if (configured.length === 0) {
-        body.createEl('div', {
-          text: 'No keys configured.',
-          cls: 'recito-empty',
-        });
-      } else {
-        for (const config of configured) {
-          this.renderKeyRow(body, config, meta.id);
-        }
+    // Key list (members of this pool)
+    const body = card.createDiv({ cls: 'recito-card-body' });
+    const configured = configsInGroup(this.plugin.settings.providers, groupKey);
+    if (configured.length === 0) {
+      body.createEl('div', {
+        text: 'No keys configured.',
+        cls: 'recito-empty',
+      });
+    } else {
+      for (const config of configured) {
+        this.renderKeyRow(body, config, providerId);
       }
     }
   }
 
   private renderKeyRow(parent: HTMLElement, config: ProviderConfig, providerId: string): void {
-    const isActive = config.id === this.plugin.settings.activeProviderGroup;
-    const row = parent.createDiv({ cls: 'recito-key-row' + (isActive ? ' is-active' : '') });
+    const isDisabled = !!config.disabled;
+    const row = parent.createDiv({
+      cls: 'recito-key-row' + (isDisabled ? ' is-disabled' : ''),
+    });
 
     // Status dot
-    row.createDiv({ cls: 'recito-key-dot' + (isActive ? ' is-active' : '') });
+    row.createDiv({ cls: 'recito-key-dot' + (isDisabled ? '' : ' is-active') });
 
     // Info column
     const info = row.createDiv({ cls: 'recito-key-info' });
@@ -101,11 +220,11 @@ export class RecitoSettingTab extends PluginSettingTab {
     if (config.name && config.name !== providerId) {
       titleLine.createSpan({ text: config.name, cls: 'recito-key-name' });
     }
-    if (isActive) {
-      titleLine.createSpan({ text: 'Active', cls: 'recito-badge' });
+    if (isDisabled) {
+      titleLine.createSpan({ text: 'Disabled', cls: 'recito-badge recito-badge--muted' });
     }
 
-    // Subline: provider type + model
+    // Subline: model (and baseUrl for custom)
     const subParts: string[] = [];
     if (providerId === 'elevenlabs') {
       const modelId = (config.extraParams?.model_id as string) ?? 'eleven_multilingual_v2';
@@ -114,7 +233,6 @@ export class RecitoSettingTab extends PluginSettingTab {
     } else if (providerId === 'custom') {
       const model = (config.extraParams?.model as string) ?? 'tts-1';
       subParts.push(`model: ${model}`);
-      if (config.baseUrl) subParts.push(config.baseUrl);
     }
     if (subParts.length > 0) {
       info.createDiv({ text: subParts.join(' · '), cls: 'recito-key-sub' });
@@ -123,16 +241,20 @@ export class RecitoSettingTab extends PluginSettingTab {
     // Actions
     const actions = row.createDiv({ cls: 'recito-key-actions' });
 
-    if (!isActive) {
-      const setActiveBtn = actions.createEl('button', { text: 'Set active' });
-      setActiveBtn.addEventListener('click', async () => {
-        this.plugin.settings.activeProviderGroup = config.id;
-        // Clear voice — different provider/key likely has different voices
-        this.plugin.settings.activeVoiceId = null;
-        await this.plugin.saveSettings();
-        this.display();
-      });
-    }
+    const toggleBtn = actions.createEl('button', {
+      text: isDisabled ? 'Enable' : 'Disable',
+    });
+    toggleBtn.addEventListener('click', async () => {
+      const idx = this.plugin.settings.providers.findIndex((p) => p.id === config.id);
+      const existing = this.plugin.settings.providers[idx];
+      if (!existing) return;
+      this.plugin.settings.providers[idx] = {
+        ...existing,
+        disabled: !isDisabled,
+      };
+      await this.plugin.saveSettings();
+      this.display();
+    });
 
     const testBtn = actions.createEl('button', { text: 'Test' });
     testBtn.addEventListener('click', async () => {
@@ -147,10 +269,36 @@ export class RecitoSettingTab extends PluginSettingTab {
     editBtn.addEventListener('click', () => {
       new ProviderModal(this.app, providerId, config.name, config, async (updated) => {
         const idx = this.plugin.settings.providers.findIndex((p) => p.id === config.id);
-        if (idx >= 0) {
-          this.plugin.settings.providers[idx] = updated;
+        const prev = idx >= 0 ? this.plugin.settings.providers[idx] : undefined;
+        if (idx >= 0 && prev) {
+          // Preserve disabled flag across edits.
+          this.plugin.settings.providers[idx] = {
+            ...updated,
+            disabled: prev.disabled,
+          };
         }
         invalidateVoiceCache(config.id);
+
+        // Custom: editing baseUrl may move this key to a different pool.
+        // If the active group used to point at the old pool and that pool is now
+        // empty, follow the key into its new pool.
+        if (
+          providerId === 'custom' &&
+          normalizeBaseUrl(config.baseUrl) !== normalizeBaseUrl(updated.baseUrl)
+        ) {
+          const oldGroup = getGroupKey(config);
+          const stillExists = this.plugin.settings.providers.some(
+            (p) => getGroupKey(p) === oldGroup,
+          );
+          if (!stillExists && this.plugin.settings.activeProviderGroup === oldGroup) {
+            this.plugin.settings.activeProviderGroup = getGroupKey(updated);
+            this.plugin.settings.activeVoiceId = null;
+          }
+        }
+
+        if (ensureActiveGroupValid(this.plugin)) {
+          this.plugin.settings.activeVoiceId = null;
+        }
         await this.plugin.saveSettings();
         this.display();
       }).open();
@@ -158,12 +306,22 @@ export class RecitoSettingTab extends PluginSettingTab {
 
     const removeBtn = actions.createEl('button', { text: 'Remove', cls: 'mod-warning' });
     removeBtn.addEventListener('click', async () => {
+      const removedGroup = getGroupKey(config);
       this.plugin.settings.providers = this.plugin.settings.providers.filter(
         (p) => p.id !== config.id,
       );
-      if (this.plugin.settings.activeProviderGroup === config.id) {
+      // If the active pool is now empty, switch to the first remaining pool.
+      const poolStillExists = this.plugin.settings.providers.some(
+        (p) => getGroupKey(p) === removedGroup,
+      );
+      if (
+        !poolStillExists &&
+        this.plugin.settings.activeProviderGroup === removedGroup
+      ) {
         this.plugin.settings.activeProviderGroup =
-          this.plugin.settings.providers[0]?.id ?? null;
+          this.plugin.settings.providers[0]
+            ? getGroupKey(this.plugin.settings.providers[0])
+            : null;
         this.plugin.settings.activeVoiceId = null;
       }
       invalidateVoiceCache(config.id);
@@ -197,18 +355,22 @@ export class RecitoSettingTab extends PluginSettingTab {
     const card = containerEl.createDiv({ cls: 'recito-card' });
     const body = card.createDiv({ cls: 'recito-card-body' });
 
-    const active = getActiveConfig(this.plugin);
+    const active = getActivePoolRepresentative(this.plugin);
     if (!active) {
       body.createEl('div', {
-        text: 'No active provider. Add a key and set it active to choose a voice.',
+        text: 'No active provider pool. Add a key and set its provider active to choose a voice.',
         cls: 'recito-empty',
       });
       return;
     }
 
     const meta = PROVIDER_LIST.find((m) => m.id === active.providerId);
+    const activeGroup = this.plugin.settings.activeProviderGroup ?? '';
+    const label = isCustomGroupKey(activeGroup)
+      ? `${meta?.name ?? active.providerId} · ${getCustomBaseUrlFromGroupKey(activeGroup) || '(no base URL)'}`
+      : (meta?.name ?? active.providerId);
     body.createEl('div', {
-      text: `Active provider: ${meta?.name ?? active.providerId}`,
+      text: `Active pool: ${label}`,
       cls: 'recito-key-sub',
     });
 
