@@ -105,24 +105,70 @@ export default class RecitoPlugin extends Plugin {
   }
 
   async startPlayback(): Promise<void> {
-    const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    const markdownView = this.findTargetMarkdownView();
     if (!markdownView) {
       new Notice('Recito: Open a Markdown note to start reading.');
       return;
     }
 
-    // Switch to reading (preview) mode
+    // Switch to reading (preview) mode if needed. setState resolves *before*
+    // Obsidian has actually built the preview DOM, so we must poll for the
+    // preview section to be populated before handing the container to the
+    // orchestrator (which extracts text from the DOM).
     const currentState = markdownView.getState() as { mode?: string };
-    if (currentState.mode !== 'preview') {
+    const wasEditMode = currentState.mode !== 'preview';
+    if (wasEditMode) {
       await markdownView.setState({ mode: 'preview' }, { history: false });
     }
 
     await this.activateSidebar();
 
     const containerEl = markdownView.containerEl;
-    const notePath = markdownView.file?.path ?? '';
+    const ready = await this.waitForReadingViewReady(containerEl);
+    if (!ready) {
+      new Notice('Recito: Reading view did not render in time. Please try again.');
+      return;
+    }
 
+    const notePath = markdownView.file?.path ?? '';
     await this.orchestrator.startPlayback(containerEl, notePath);
+  }
+
+  /**
+   * Resolve the markdown view the user is acting on. `getActiveViewOfType`
+   * returns null when the active leaf is a sidebar (e.g., the user clicked
+   * Recito's own sidebar play button), so fall back to the most recently
+   * active main-area leaf.
+   */
+  private findTargetMarkdownView(): MarkdownView | null {
+    const active = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (active) return active;
+    const recent = this.app.workspace.getMostRecentLeaf();
+    if (recent && recent.view instanceof MarkdownView) return recent.view;
+    return null;
+  }
+
+  /**
+   * Poll until the reading view's preview section actually contains rendered
+   * content. Obsidian builds the preview DOM asynchronously after `setState`,
+   * so a synchronous query immediately after switching modes finds an empty
+   * (or missing) `.markdown-preview-section`.
+   */
+  private async waitForReadingViewReady(
+    containerEl: HTMLElement,
+    timeoutMs = 2000,
+  ): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const section = containerEl.querySelector<HTMLElement>(
+        '.markdown-reading-view .markdown-preview-section',
+      );
+      if (section && (section.textContent ?? '').trim().length > 0) {
+        return true;
+      }
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    }
+    return false;
   }
 
   togglePlayback(): void {
@@ -172,7 +218,7 @@ export default class RecitoPlugin extends Plugin {
   }
 
   async clearCurrentNoteProgress(): Promise<void> {
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    const view = this.findTargetMarkdownView();
     const path = view?.file?.path;
     if (!path) {
       new Notice('Recito: Open a Markdown note first.');
