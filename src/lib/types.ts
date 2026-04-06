@@ -60,6 +60,7 @@ export interface TextNodeEntry {
 export interface TextMapResult {
   entries: TextNodeEntry[];
   text: string;
+  sourceElement: Element;
 }
 
 export interface SentenceBoundary {

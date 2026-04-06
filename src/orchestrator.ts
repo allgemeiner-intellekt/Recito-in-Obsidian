@@ -218,7 +218,7 @@ export class Orchestrator {
       this.plugin.settings.accentColor,
     );
     this.highlightManager = new HighlightManager(resolvedHighlight);
-    this.highlightManager.init(containerEl);
+    this.highlightManager.init(textMap.sourceElement);
 
     // Set up auto-scroll
     const scrollContainer =

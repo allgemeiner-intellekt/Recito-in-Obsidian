@@ -4,6 +4,8 @@ const SKIP_SELECTORS = [
   'pre',
   'code',
   '.frontmatter-container',
+  '.metadata-container',
+  '.metadata-properties',
   '.math',
   '.callout-title',
   '.embedded-backlinks',
@@ -44,5 +46,5 @@ export function buildTextNodeMap(root: Element): TextMapResult {
   }
 
   const text = entries.map((e) => e.node.nodeValue ?? '').join('');
-  return { entries, text };
+  return { entries, text, sourceElement: root };
 }
