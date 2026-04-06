@@ -12,16 +12,6 @@ import { getCachedVoices } from './providers/voice-cache';
 
 export const SIDEBAR_VIEW_TYPE = 'recito-sidebar';
 
-// Average chunk duration used for time estimation (seconds)
-const AVG_CHUNK_DURATION = 15;
-
-function formatTime(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
 /** Stable string hash → non-negative integer. */
 function hashString(s: string): number {
   let h = 0;
@@ -71,8 +61,6 @@ export class RecitoSidebarView extends ItemView {
   private collapseBtnIconState: 'collapsed' | 'expanded' | null = null;
   private noteTitleEl: HTMLElement | null = null;
   private providerEl: HTMLElement | null = null;
-  private timeElapsedEl: HTMLElement | null = null;
-  private timeTotalEl: HTMLElement | null = null;
   private progressBarEl: HTMLElement | null = null;
   private progressBarFillEl: HTMLElement | null = null;
   private progressBarThumbEl: HTMLElement | null = null;
@@ -216,10 +204,6 @@ export class RecitoSidebarView extends ItemView {
       this.handleProgressSeek(ev);
     });
 
-    const times = progress.createDiv({ cls: 'recito-times' });
-    this.timeElapsedEl = times.createSpan({ cls: 'recito-time-elapsed' });
-    this.timeTotalEl = times.createSpan({ cls: 'recito-time-total' });
-
     // Transport row
     const transport = this.playingEl.createDiv({ cls: 'recito-transport' });
 
@@ -317,13 +301,6 @@ export class RecitoSidebarView extends ItemView {
 
     if (this.noteTitleEl) this.noteTitleEl.textContent = title;
     if (this.providerEl) this.providerEl.textContent = this.formatProviderLabel();
-
-    // Time + progress
-    const avgDur = state.duration > 0 ? state.duration : AVG_CHUNK_DURATION;
-    const elapsed = state.currentChunkIndex * avgDur + state.currentTime;
-    const total = state.totalChunks * avgDur;
-    if (this.timeElapsedEl) this.timeElapsedEl.textContent = formatTime(elapsed);
-    if (this.timeTotalEl) this.timeTotalEl.textContent = formatTime(total);
 
     if (this.progressBarFillEl && state.totalChunks > 0) {
       const overallProgress =

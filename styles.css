@@ -434,14 +434,6 @@
   transform: translate(-50%, -50%) scale(1);
 }
 
-.recito-times {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
-}
-
 /* Transport */
 .recito-transport {
   display: flex;
