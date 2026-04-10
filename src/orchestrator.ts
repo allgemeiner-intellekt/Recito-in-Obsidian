@@ -423,7 +423,7 @@ export class Orchestrator {
         synthesized = cached;
       } else {
         try {
-          synthesized = await this.synthesizeChunkWithFailover(i);
+          synthesized = await this.synthesizeChunkWithFailover(i, signal);
         } catch (err) {
           if (signal?.aborted) return;
           const errorMsg = err instanceof Error ? err.message : String(err);
@@ -445,7 +445,7 @@ export class Orchestrator {
       for (let j = 1; j <= LOOKAHEAD_BUFFER_SIZE; j++) {
         const prefetchIndex = i + j;
         if (prefetchIndex < totalChunks && !this.prefetchCache.has(prefetchIndex)) {
-          this.synthesizeChunk(prefetchIndex)
+          this.synthesizeChunk(prefetchIndex, signal)
             .then((result) => {
               if (!signal?.aborted && this.sessionGeneration === gen) {
                 this.prefetchCache.set(prefetchIndex, result);
@@ -519,10 +519,14 @@ export class Orchestrator {
   // Synthesis + failover
   // =========================================================================
 
-  private async synthesizeChunk(chunkIndex: number): Promise<SynthesizedChunk> {
+  private async synthesizeChunk(chunkIndex: number, signal?: AbortSignal): Promise<SynthesizedChunk> {
     const session = this.currentSession;
     if (!session) {
       throw new Error('No active playback session.');
+    }
+
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
     }
 
     const chunk = this.chunks[chunkIndex];
@@ -540,6 +544,10 @@ export class Orchestrator {
       speed: serverSpeed,
     });
 
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
     return {
       chunkIndex,
       audioData: result.audioData,
@@ -548,12 +556,12 @@ export class Orchestrator {
     };
   }
 
-  private async synthesizeChunkWithFailover(chunkIndex: number): Promise<SynthesizedChunk> {
+  private async synthesizeChunkWithFailover(chunkIndex: number, signal?: AbortSignal): Promise<SynthesizedChunk> {
     let attempts = 0;
 
     while (attempts < MAX_FAILOVER_ATTEMPTS) {
       try {
-        return await this.synthesizeChunk(chunkIndex);
+        return await this.synthesizeChunk(chunkIndex, signal);
       } catch (err) {
         attempts++;
 
@@ -606,10 +614,14 @@ export class Orchestrator {
         return;
       }
 
-      this.chunkCompleteResolvers.set(chunkIndex, resolve);
-
-      signal?.addEventListener('abort', () => {
+      const onAbort = () => {
         this.chunkCompleteResolvers.delete(chunkIndex);
+        resolve();
+      };
+      signal?.addEventListener('abort', onAbort);
+
+      this.chunkCompleteResolvers.set(chunkIndex, () => {
+        signal?.removeEventListener('abort', onAbort);
         resolve();
       });
     });
