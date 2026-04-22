@@ -1,6 +1,6 @@
 {
 	"name": "recito",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "Obsidian plugin that reads notes aloud with karaoke-style word highlighting. Supports OpenAI, ElevenLabs, Groq, Mimo, and custom TTS providers.",
 	"main": "main.js",
 	"type": "module",
