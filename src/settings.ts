@@ -4,6 +4,7 @@ import type { ProviderConfig, Voice } from './lib/types';
 import { DEFAULT_SETTINGS } from './lib/constants';
 import { PROVIDER_LIST, getProvider } from './providers/registry';
 import { ELEVENLABS_MODELS } from './providers/elevenlabs';
+import { MIMO_MODELS, MIMO_DEFAULT_MODEL } from './providers/mimo';
 import { getCachedVoices, setCachedVoices, invalidateVoiceCache } from './providers/voice-cache';
 import {
   getGroupKey,
@@ -232,6 +233,11 @@ export class RecitoSettingTab extends PluginSettingTab {
     if (providerId === 'elevenlabs') {
       const modelId = (config.extraParams?.model_id as string) ?? 'eleven_multilingual_v2';
       const label = ELEVENLABS_MODELS.find((m) => m.modelId === modelId)?.label ?? modelId;
+      subParts.push(`model: ${label}`);
+    } else if (providerId === 'mimo') {
+      // Existing configs with no saved model fall back to the v2 legacy model.
+      const modelId = (config.extraParams?.model as string) ?? 'mimo-v2-tts';
+      const label = MIMO_MODELS.find((m) => m.modelId === modelId)?.label ?? modelId;
       subParts.push(`model: ${label}`);
     } else if (providerId === 'custom') {
       const model = (config.extraParams?.model as string) ?? 'tts-1';
@@ -637,6 +643,7 @@ class ProviderModal extends Modal {
   private baseUrl = '';
   private displayName = '';
   private elevenLabsModelId = 'eleven_multilingual_v2';
+  private mimoModel: string = MIMO_DEFAULT_MODEL;
   private customModel = 'tts-1';
 
   constructor(
@@ -658,6 +665,8 @@ class ProviderModal extends Modal {
       this.displayName = existing.name;
       this.elevenLabsModelId =
         (existing.extraParams?.model_id as string) ?? 'eleven_multilingual_v2';
+      // Pre-model-picker configs get v2 (legacy) so playback keeps working.
+      this.mimoModel = (existing.extraParams?.model as string) ?? 'mimo-v2-tts';
       this.customModel = (existing.extraParams?.model as string) ?? 'tts-1';
     } else {
       this.displayName = providerName;
@@ -713,6 +722,20 @@ class ProviderModal extends Modal {
         });
     }
 
+    if (this.providerId === 'mimo') {
+      new Setting(contentEl)
+        .setName('Model')
+        .setDesc('Xiaomi Mimo synthesis model.')
+        .addDropdown((drop) => {
+          for (const m of MIMO_MODELS) {
+            drop.addOption(m.modelId, m.label);
+          }
+          drop.setValue(this.mimoModel).onChange((value) => {
+            this.mimoModel = value;
+          });
+        });
+    }
+
     if (this.providerId === 'custom') {
       new Setting(contentEl)
         .setName('Base URL')
@@ -760,6 +783,8 @@ class ProviderModal extends Modal {
             const extraParams: Record<string, unknown> = {};
             if (this.providerId === 'elevenlabs') {
               extraParams.model_id = this.elevenLabsModelId;
+            } else if (this.providerId === 'mimo') {
+              extraParams.model = this.mimoModel;
             } else if (this.providerId === 'custom' && this.customModel.trim()) {
               extraParams.model = this.customModel.trim();
             }
